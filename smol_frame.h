@@ -22,6 +22,8 @@ distribution.
 */
 
 /*
+NOTES: 
+
 If your program doesn't need to refer frames in multiple code 
 files you can just include this file into your main source file 
 like this:
@@ -50,7 +52,7 @@ Anyway compiling with xcb backend would work like this:
 gcc main.c -lxcb -lxcb-icccm -lxcb-keysyms -o main
 
 If you're using WAYLAND you have to link those libraries
-accordingly. 
+accordingly. (Wayland not implemented yet)
 */
 
 /*
@@ -60,6 +62,7 @@ TODO:
 - Key modifiers to the events
 - Some sort of generic drag / drop system for items (files at starters)
 - Backends (Wayland for Linux, Mac, maybe Web and android)
+- High DPI stuff
 
 Contributions: 
 - Me (MaGetzUb) 
@@ -88,6 +91,7 @@ Contributions:
 #		include <wayland-server.h>
 #		include <wayland-client-core.h>
 #		include <wayland-client-protocol.h> 
+#	error Wayland backend not implemented yet!
 #	else
 #		define SMOL_FRAME_BACKEND_X11
 #		include <X11/X.h>
@@ -98,6 +102,7 @@ Contributions:
 #elif defined(__APPLE__)
 #	define SMOL_PLATFORM_MAC_OS
 //TODO:
+#error Mac OS backend not implemented yet!
 #endif 
 
 
