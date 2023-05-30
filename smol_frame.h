@@ -60,7 +60,10 @@ TODO:
 - Key modifiers to the events
 - Some sort of generic drag / drop system for items (files at starters)
 - Backends (Wayland for Linux, Mac, maybe Web and android)
-Contributions: Me (MaGetzUb)
+
+Contributions: 
+- Me (MaGetzUb) 
+- Diego Lopes (https://github.com/DCubix)
 */
 
 
