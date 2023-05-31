@@ -63,6 +63,7 @@ TODO:
 - Some sort of generic drag / drop system for items (files at starters)
 - Backends (Wayland for Linux, Mac, maybe Web and android)
 - High DPI stuff
+- Implement actual OpenGL context set up for newly generated window, if the window flag is defined.
 
 Contributions: 
 - Me (MaGetzUb) 
@@ -295,7 +296,7 @@ typedef struct _smol_frame_event_t {
 
 //All the key code
 typedef enum {
-	SMOLK_UNKNOWN = 0XFFFFFFFFU,
+	SMOLK_UNKNOWN = 0xFFFFFFFFU,
 	SMOLK_A = 0, SMOLK_B, SMOLK_C, SMOLK_D, SMOLK_E, SMOLK_F, SMOLK_G, SMOLK_H,
 	SMOLK_I, SMOLK_J, SMOLK_K, SMOLK_L, SMOLK_M, SMOLK_N, SMOLK_O, SMOLK_P, SMOLK_Q,
 	SMOLK_R, SMOLK_S, SMOLK_T, SMOLK_U, SMOLK_V, SMOLK_W, SMOLK_X, SMOLK_Y, SMOLK_Z,
@@ -1315,7 +1316,6 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 	return renderer;
 }
 
-
 smol_frame_t* smol_frame_create_advanced(int width, int height, const char* title, unsigned int flags, smol_frame_t* parent) {
 
 	xcb_connection_t* connection = xcb_connect(NULL, NULL);
@@ -1610,7 +1610,7 @@ void smol_frame_blit_pixels(
 		0,                             
 		frame->screen->root_depth,                            
 		bytesPerRow * renderer->height,
-		(uint8_t*)renderer->pixel_data + bytesPerRow * dstY
+		(uint8_t*)renderer->pixel_data
 	);
 	
 	xcb_flush(frame->display_server_connection);

@@ -44,7 +44,7 @@ int main(int numArgs, const char* argv[]) {
 				break;
 			}
 			else if(event.type == SMOL_FRAME_EVENT_RESIZE) {
-				printf("Screen size is now: (%d x %d)\n", event.size.width, event.size.height);
+				printf("Frame resolution size is now: (%d x %d)\n", event.size.width, event.size.height);
 				break;
 			}
 			else if(event.type == SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN) {
