@@ -75,14 +75,18 @@ Contributions:
 #define SMOL_FRAME_H
 
 #if defined(_WIN32)
+#	ifndef SMOL_PLATFORM_WINDOWS
 #	define SMOL_PLATFORM_WINDOWS
+#	endif 
 #	define WIN32_LEAN_AND_MEAN
 #	include <Windows.h>
 #	include <windowsx.h>
 #	include <wingdi.h>
 #	pragma comment(lib, "gdi32.lib")
 #elif defined(__linux__) 
+#	ifndef SMOL_PLATFORM_LINUX
 #	define SMOL_PLATFORM_LINUX
+#	endif 
 #	if defined(SMOL_FRAME_BACKEND_XCB)
 #		include <xcb/xcb.h>
 #		include <xcb/xcb_icccm.h>
@@ -101,9 +105,11 @@ Contributions:
 #		include <X11/Xutil.h>
 #	endif 
 #elif defined(__APPLE__)
-#	define SMOL_PLATFORM_MAC_OS
+#	ifndef SMOL_PLATFORM_MAX_OS
+#	define SMOL_PLATFORM_MAX_OS
+#	endif 
 //TODO:
-#error Mac OS backend not implemented yet!
+#	error Mac OS backend not implemented yet!
 #endif 
 
 

@@ -1,19 +1,25 @@
 #include <malloc.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
-#include <stdbool.h>
+
+#define SMOL_UTILS_IMPLEMENTATION
+#include "smol_utils.h"
 
 #define OLIVEC_IMPLEMENTATION
 #include "thirdparty/olive.c"
 
 
+
+
 typedef unsigned int Uint32;
 
 Uint32 surface[800 * 600];
+
 
 int main(int numArgs, const char* argv[]) {
 
@@ -33,7 +39,17 @@ int main(int numArgs, const char* argv[]) {
 	int mouseX = 0;
 	int mouseY = 0;
 
+	int fps = 0, frameCounter = 0;
+	double timeAccum = 0.;
+	double tp1, dt;
+
+	char buf[256] = {0};
+
+	printf("%lf\n", smol_timer());
+
 	while(running) {
+
+		double tp1 = smol_timer();
 
 		smol_frame_update(frame);
 
@@ -88,9 +104,22 @@ int main(int numArgs, const char* argv[]) {
 		olivec_rect(canvas, 180, 150, 75, 30, 0xFFCCAA88);
 		olivec_line(canvas, 400, 300, mouseX, mouseY, 0xFFFF00FF);
 		olivec_circle(canvas, mouseX, mouseY, 10, 0xFF00CC00);
-		olivec_text(canvas, "hello, world!", 10, 10, olivec_default_font, 2, 0xFFCCFF00);
+		olivec_text(canvas, "hello, world!", 10, 10, olivec_default_font, 2, 0xFF00FFCC);
+
+		snprintf(buf, 256, "fps: %d", fps);
+		olivec_text(canvas, buf, 0, 588, olivec_default_font, 2, 0xFFCCFF00);
 
 		smol_frame_blit_pixels(frame, surface, 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
+
+		dt = smol_timer() - tp1;
+		timeAccum += dt;
+
+		if(timeAccum > 1.) {
+			fps = frameCounter;
+			frameCounter = 0;
+			timeAccum -= 1.;
+		}
+		frameCounter++;
 
 	}
 
