@@ -18,7 +18,8 @@
 #	error Mac OS backend not implemented yet!
 #endif 
 
-//smol_timer - Returns basically system up time on Windows, time since epoch on Linux. 
+//smol_timer - Returns high precision system up time in seconds on
+//             Windows, and high precision time since Unix epoch on Linux. 
 double smol_timer(); 
 
 #endif 
