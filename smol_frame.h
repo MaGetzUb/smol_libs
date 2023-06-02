@@ -333,12 +333,16 @@ typedef enum {
 #ifdef SMOL_FRAME_IMPLEMENTATION
 
 #ifdef _MSC_VER
-#define BreakPoint __debugbreak
+#	ifndef SMOL_BREAKPOINT
+#		define SMOL_BREAKPOINT __debugbreak //MSVC uses this
+#	endif 
 #else 
-#define BreakPoint __builtin_trap
+#	ifndef SMOL_BREAKPOINT
+#		define SMOL_BREAKPOINT __builtin_trap //Clang and GCC uses this, AFAIK
+#	endif
 #endif 
 
-
+#ifndef SMOL_ASSERT
 #define SMOL_ASSERT(condition) \
 	if(!(condition)) \
 		printf(\
@@ -347,7 +351,8 @@ typedef enum {
 			"IN FILE '" __FILE__ "'\n" \
 			"ON LINE %d", __LINE__ \
 		), \
-		BreakPoint()
+		SMOL_BREAKPOINT()
+#endif 
 
 typedef struct {
 	smol_frame_event_t* events;

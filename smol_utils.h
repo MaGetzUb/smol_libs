@@ -18,12 +18,34 @@
 #	error Mac OS backend not implemented yet!
 #endif 
 
-//smol_timer - Returns basically system up time as precise as possible.
-double smol_timer();
+//smol_timer - Returns basically system up time on Windows, time since epoch on Linux. 
+double smol_timer(); 
 
 #endif 
 
 #ifdef SMOL_UTILS_IMPLEMENTATION
+
+#ifdef _MSC_VER
+#	ifndef SMOL_BREAKPOINT
+#		define SMOL_BREAKPOINT __debugbreak //MSVC uses this
+#	endif 
+#else 
+#	ifndef SMOL_BREAKPOINT
+#		define SMOL_BREAKPOINT __builtin_trap //Clang and GCC uses this, AFAIK
+#	endif
+#endif 
+
+#ifndef SMOL_ASSERT
+#define SMOL_ASSERT(condition) \
+	if(!(condition)) \
+		printf(\
+			"SMOL FRAME ASSERTION FAILED!\n" \
+			#condition "\n" \
+			"IN FILE '" __FILE__ "'\n" \
+			"ON LINE %d", __LINE__ \
+		), \
+		SMOL_BREAKPOINT()
+#endif 
 
 #if defined(SMOL_PLATFORM_WINDOWS)
 
