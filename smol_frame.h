@@ -155,8 +155,14 @@ int smol_frame_acquire_event(smol_frame_t* frame, smol_frame_event_t* event);
 
 //smol_frame_update - Polls all events for a window.
 //Arguments: 
-// - smol_frame_t* frame -- A window that's evens are being polled
+// - smol_frame_t* frame -- A window that's events are being polled
 void smol_frame_update(smol_frame_t* frame);
+
+//smol_frame_set_title - Set a window top bar title
+//Arguments:
+// - smol_frame_t* frame -- A window that's title is being changed
+// - const char* title	 -- The window title
+void smol_frame_set_title(smol_frame_t* frame, const char* title);
 
 //smol_frame_blit_pixels - Blits pixels to frame 
 //Arguments: 
@@ -612,6 +618,10 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	return result;
 
 
+}
+
+void smol_frame_set_title(smol_frame_t* frame, const char* title) {
+	SMOL_ASSERT("Failed to set window title!" && SetWindowTextA(frame->frame_handle_win32, title));
 }
 
 HWND smol_frame_get_win32_window_handle(smol_frame_t* frame) {
@@ -1101,6 +1111,11 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	return result;
 }
 
+void smol_frame_set_title(smol_frame_t* frame, const char* title) {
+	XStoreName(result->display_server_connection, result->frame_window, title);
+	XFlush(result->display_server_connection);
+}
+
 void smol_frame_destroy(smol_frame_t* frame) {
 
 	XDestroyWindow(frame->display_server_connection, frame->frame_window);
@@ -1415,6 +1430,17 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		free(deleteWindowReply);
 	}
 
+	xcb_change_property(
+		connection, 
+		XCB_PROP_MODE_REPLACE, 
+		window, 
+		XCB_ATOM_WM_NAME, 
+		XCB_ATOM_STRING, 
+		8, 
+		strlen(title), 
+		(const void*)title
+	);
+
     xcb_map_window(connection, window);
     xcb_flush(connection);
 
@@ -1436,6 +1462,20 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 
 	return result;
 
+}
+
+void smol_frame_set_title(smol_frame_t* frame, const char* title) {
+	xcb_change_property(
+		frame->display_server_connection, 
+		XCB_PROP_MODE_REPLACE, 
+		frame->frame_window, 
+		XCB_ATOM_WM_NAME, 
+		XCB_ATOM_STRING, 
+		8, 
+		strlen(title), 
+		(const void*)title
+	);
+	xcb_flush(frame->display_server_connection);
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {

@@ -25,6 +25,8 @@ int main(int numArgs, const char* argv[]) {
 
 	smol_frame_t* frame = smol_frame_create(800, 600, "Smol Frame :)");
 
+	smol_frame_set_title(frame, "Hello, world!");
+
 #if 0
 	for(Uint32 j = 0U; j < 600U; j++)
 	for(Uint32 i = 0u; i < 800u; i++)
