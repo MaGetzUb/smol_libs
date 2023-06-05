@@ -123,16 +123,18 @@ typedef struct _smol_frame_event_t smol_frame_event_t;
 //Arguments:
 // - int width            -- width of the window
 // - int height           -- height of the window
-// - const char* title    -- tilte of the window
+// - const char* title    -- title of the window
 // - unsigned int flags   -- behavioral hints for the window (is it resizable, does it support OpenGL etc)
 // - smol_frame_t* parent -- parent window for this window
+//Returns: smol_frame_t*  -- a handle to the newly created window
 smol_frame_t* smol_frame_create_advanced(int width, int height, const char* title, unsigned int flags, smol_frame_t* parent);
 
 //smol_frame_create - Creates a window
 //Arguments:
 // - int width            -- width of the window
 // - int height           -- height of the window
-// - const char* title    -- tilte of the window
+// - const char* title    -- title of the window
+//Returns: smol_frame_t*  -- a handle to the newly created window
 smol_frame_t* smol_frame_create(int width, int height, const char* title);
 
 //smol_frame_is_closed - Returns true if the window has been closed
