@@ -35,12 +35,15 @@ int main(int numArgs, const char* argv[]) {
 
 	bool running = true;
 
-	int mouseX = 0;
-	int mouseY = 0;
+	int anchorX = 400;
+	int anchorY = 300;
 
 	int fps = 0, frameCounter = 0;
 	double timeAccum = 0.;
 	double tp1, dt;
+
+	float red = 0.f;
+	float blue = 0.f;
 
 	char buf[256] = {0};
 
@@ -99,15 +102,35 @@ int main(int numArgs, const char* argv[]) {
 
 		olivec_fill(canvas, 0xFF0000AA);
 
+		if(smol_mouse_hit(1)) {
+			anchorX = smol_mouse_x();
+			anchorY = smol_mouse_y();
+			red = 255.f;
+		}
+
+		if(smol_mouse_up(1)) {
+			blue = 255.f;
+		}
+
+
+
+		if(red > 0.f) red -= 100.f * (float)dt; else red = 0.f;
+		if(blue > 0.f) blue -= 100.f * (float)dt; else blue = 0.f;
+	
+
 		olivec_rect(canvas, 180, 150, 75, 30, 0xFFCCAA88);
-		olivec_line(canvas, 400, 300, smol_mouse_x(), smol_mouse_y(), 0xFFFF00FF);
-		olivec_circle(canvas, smol_mouse_x(), smol_mouse_y(), 10+smol_mouse_z()*2, 0xFF000000 | (0x00CC00 << (smol_mouse_down(1) * 8)));
+		olivec_line(canvas, anchorX, anchorY, smol_mouse_x(), smol_mouse_y(), 0xFFFF00FF);
+		
+
+
+		olivec_circle(canvas, smol_mouse_x(), smol_mouse_y(), 10+smol_mouse_z()*2, 0xFF00CC00 | ((int)red) << 16 | (int)blue);
 		olivec_text(canvas, "hello, world!", 10, 10, olivec_default_font, 2, 0xFF00FFCC);
 
 		snprintf(buf, 256, "fps: %d", fps);
 		olivec_text(canvas, buf, 0, 588, olivec_default_font, 2, 0xFFCCFF00);
 
 		smol_frame_blit_pixels(frame, surface, 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
+
 
 		dt = smol_timer() - tp1;
 		timeAccum += dt;
