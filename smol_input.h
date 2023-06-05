@@ -29,12 +29,6 @@ distribution.
 #include "smol_frame.h"
 #endif 
 
-typedef enum {
-	SMOL_INPUT_STATE_DOWN = 1,
-	SMOL_INPUT_STATE_CHANGE = 2,
-	SMOL_INPUT_STATE_HIT = 3
-} smol_input_state;
-
 //smol_inputs_flush - Clears all the key state changes, and preservers key pressed states
 void smol_inputs_flush();
 
@@ -123,6 +117,12 @@ int smol_mouse_move_w();
 #endif 
 
 #ifdef SMOL_INPUT_IMPLEMENTATION
+
+typedef enum {
+	SMOL_INPUT_STATE_DOWN = 1,
+	SMOL_INPUT_STATE_CHANGE = 2,
+	SMOL_INPUT_STATE_HIT = 3
+} smol_input_state;
 
 unsigned char smol__key_states[256];
 unsigned char smol__mouse_button_states[5];
