@@ -16,7 +16,13 @@
 #define OLIVEC_IMPLEMENTATION
 #include "thirdparty/olive.c"
 
+#include "smol_font.h"
 
+static Olivec_Font smol_font = {
+	.glyphs = &PXF_SMOL_FONT_DATA[0][0][0],
+	.width = PXF_SMOL_FONT_WIDTH,
+	.height = PXF_SMOL_FONT_HEIGHT
+};
 
 
 typedef unsigned int Uint32;
@@ -124,10 +130,16 @@ int main(int numArgs, const char* argv[]) {
 
 
 		olivec_circle(canvas, smol_mouse_x(), smol_mouse_y(), 10+smol_mouse_z()*2, 0xFF00CC00 | ((int)red) << 16 | (int)blue);
-		olivec_text(canvas, "hello, world!", 10, 10, olivec_default_font, 2, 0xFF00FFCC);
+		olivec_text(canvas, "hello, world!", 10, 10, smol_font, 1, 0xFF00FFCC);
+		olivec_text(canvas, "!\"#$%&'()*+,-./0123456789:;<=>?@", 10, 25, smol_font, 1, 0xFFAA00DD);
+		olivec_text(canvas, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 10, 45, smol_font, 1, 0xFFAA00DD);
+		olivec_text(canvas, "[\\]^_`", 10, 65, smol_font, 1, 0xFFAA00DD);
+		olivec_text(canvas, "abcdefghijklmnopqrstuvwxyz", 10, 85, smol_font, 1, 0xFFAA00DD);
+		olivec_text(canvas, "{|}~", 10, 105, smol_font, 1, 0xFFAA00DD);
+
 
 		snprintf(buf, 256, "fps: %d", fps);
-		olivec_text(canvas, buf, 0, 588, olivec_default_font, 2, 0xFFCCFF00);
+		olivec_text(canvas, buf, 0, 584, smol_font, 2, 0xFFCCFF00);
 
 		smol_frame_blit_pixels(frame, surface, 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
 
