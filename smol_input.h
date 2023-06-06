@@ -138,6 +138,12 @@ int smol__mouse_move_w;
 
 
 void smol_inputs_flush() {
+
+	smol__mouse_move_x = 0;
+	smol__mouse_move_y = 0;
+	smol__mouse_move_z = 0;
+	smol__mouse_move_w = 0;
+
 	for(int i = 0; i < 5; i++) {
 		smol__mouse_button_states[i] &= SMOL_INPUT_STATE_DOWN;
 	}
@@ -151,6 +157,8 @@ int smol_inputs_update(smol_frame_event_t* event) {
 	switch(event->type) {
 		case SMOL_FRAME_EVENT_KEY_DOWN:
 		case SMOL_FRAME_EVENT_KEY_UP:
+			if(event->key.code == SMOLK_UNKNOWN)
+				return 1;
 			if((smol__key_states[event->key.code] & SMOL_INPUT_STATE_DOWN) != (event->type == SMOL_FRAME_EVENT_KEY_DOWN)) {
 				smol__key_states[event->key.code] ^= SMOL_INPUT_STATE_DOWN;
 				smol__key_states[event->key.code] |= SMOL_INPUT_STATE_CHANGE;
