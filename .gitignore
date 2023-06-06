@@ -1,3 +1,8 @@
 visualstudio/
 .vscode/
 build/
+*.pdb
+*.obj
+*.ilk
+*.exe
+*.pxf
