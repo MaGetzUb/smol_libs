@@ -51,7 +51,7 @@ int main(int numArgs, const char* argv[]) {
 
 	while(running) {
 
-		double tp1 = smol_timer();
+		tp1 = smol_timer();
 
 		smol_frame_update(frame);
 		smol_inputs_flush();
