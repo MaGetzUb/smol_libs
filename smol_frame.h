@@ -527,7 +527,7 @@ int smol_frame_is_closed(smol_frame_t* frame) {
 
 #pragma region Win32 Implementation
 #if defined(SMOL_PLATFORM_WINDOWS)
-WNDCLASSEXA wndClass;
+WNDCLASSEXW wndClass;
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -547,15 +547,15 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		wndClass.lpfnWndProc = &smol_frame_handle_event;
 		wndClass.cbClsExtra = NULL;
 		wndClass.cbWndExtra = NULL;
-		wndClass.hInstance = GetModuleHandleA(0);
-		wndClass.hIcon = LoadIconA(NULL, IDI_WINLOGO);
-		wndClass.hCursor = LoadCursorA(NULL, IDC_ARROW);
+		wndClass.hInstance = GetModuleHandle(0);
+		wndClass.hIcon = LoadIcon(NULL, IDI_WINLOGO);
+		wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
 		wndClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
 		wndClass.lpszMenuName = NULL;
-		wndClass.lpszClassName = "smol_frame";
+		wndClass.lpszClassName = L"smol_frame";
 		wndClass.hIconSm = NULL;
 		
-		ATOM registerResult = RegisterClassExA(&wndClass);
+		ATOM registerResult = RegisterClassExW(&wndClass);
 		
 		SMOL_ASSERT("Window class initialization failed!" && registerResult);
 
@@ -568,7 +568,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	if(GetCursorPos(&point) == TRUE) {
 		HMONITOR monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
 		MONITORINFO monitorInfo = { sizeof(monitorInfo) };
-		if(GetMonitorInfoA(monitor, &monitorInfo) != FALSE) {
+		if(GetMonitorInfoW(monitor, &monitorInfo) != FALSE) {
 			winRect.left = ((monitorInfo.rcMonitor.left + monitorInfo.rcMonitor.right) - width) >> 1;
 			winRect.top = ((monitorInfo.rcMonitor.top + monitorInfo.rcMonitor.bottom) - height) >> 1;
 			winRect.right = winRect.left + width;
@@ -587,11 +587,13 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	SMOL_ASSERT("Unable to allocate result!" && result);
 	memset(result, 0, sizeof(smol_frame_t));
 
+	wchar_t wide_title[1024];
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 1024);
 
-	wnd = CreateWindowExA(
+	wnd = CreateWindowExW(
 		0, 
 		wndClass.lpszClassName, 
-		title, 
+		wide_title, 
 		exStyle, 
 		winRect.left, 
 		winRect.top, 
@@ -623,7 +625,9 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 }
 
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
-	SMOL_ASSERT("Failed to set window title!" && SetWindowTextA(frame->frame_handle_win32, title));
+	wchar_t wide_title[1024];
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 1024);	
+	SMOL_ASSERT("Failed to set window title!" && SetWindowTextW(frame->frame_handle_win32, wide_title));
 }
 
 HWND smol_frame_get_win32_window_handle(smol_frame_t* frame) {
@@ -644,9 +648,9 @@ void smol_frame_destroy(smol_frame_t* frame) {
 void smol_frame_update(smol_frame_t* frame) {
 
 	MSG msg;
-	while(PeekMessageA(&msg, frame ? frame->frame_handle_win32 : NULL, 0, 0, PM_REMOVE)) {
+	while(PeekMessageW(&msg, frame ? frame->frame_handle_win32 : NULL, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		DispatchMessageW(&msg);
 	}
 
 }
@@ -657,11 +661,11 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 
 	if(msg == WM_CREATE) {
 		CREATESTRUCT* createStruct = (CREATESTRUCT*)lParam;
-		SetWindowLongPtrA(wnd, GWLP_USERDATA, createStruct->lpCreateParams);
+		SetWindowLongPtrW(wnd, GWLP_USERDATA, (LONG_PTR)createStruct->lpCreateParams);
 		return 1;
 	}
 
-	smol_frame_t* frame = GetWindowLongPtrA(wnd, GWLP_USERDATA);
+	smol_frame_t* frame = (smol_frame_t*)GetWindowLongPtrW(wnd, GWLP_USERDATA);
 	if(!frame) 
 		goto def_proc;
 	if(frame->frame_handle_win32 == NULL) 
@@ -1114,8 +1118,8 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 }
 
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
-	XStoreName(result->display_server_connection, result->frame_window, title);
-	XFlush(result->display_server_connection);
+	XStoreName(frame->display_server_connection, frame->frame_window, title);
+	XFlush(frame->display_server_connection);
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {
@@ -1132,6 +1136,7 @@ void smol_frame_destroy(smol_frame_t* frame) {
 //Can be passed null, this will pump messages to every window (on windows at least)
 void smol_frame_update(smol_frame_t* frame) {
 
+	int button_indices[] = {0, 1, 3, 2, 4, 5};
 
 	XEvent xevent;
 	while(XPending(frame->display_server_connection)) {
@@ -1194,7 +1199,7 @@ void smol_frame_update(smol_frame_t* frame) {
 				smol_frame_event_t event = { 0 };
 				if(xevent.xbutton.button < 4) {
 					event.type = xevent.type == ButtonPress ? SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN : SMOL_FRAME_EVENT_MOUSE_BUTTON_UP;
-					event.mouse.button = xevent.xbutton.button;
+					event.mouse.button = button_indices[xevent.xbutton.button];
 
 					event.mouse.dx = xevent.xmotion.x - frame->old_mouse_x;
 					event.mouse.dy = xevent.xmotion.y - frame->old_mouse_y;
@@ -1502,6 +1507,8 @@ void smol_frame_destroy(smol_frame_t* frame) {
 //Can be passed null, this will pump messages to every window (on windows at least)
 void smol_frame_update(smol_frame_t* frame) {
 
+	int button_indices[] = {0, 1, 3, 2, 4, 5};
+
 	for(xcb_generic_event_t* xevent; (xevent = xcb_poll_for_event(frame->display_server_connection));) {
 		switch(xevent->response_type & 0x7F) {
 			case XCB_EXPOSE: {
@@ -1569,7 +1576,7 @@ void smol_frame_update(smol_frame_t* frame) {
 
 				if(ev->detail < XCB_BUTTON_INDEX_4) {
 					event.type = xevent->response_type == XCB_BUTTON_PRESS ? SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN : SMOL_FRAME_EVENT_MOUSE_BUTTON_UP;
-					event.mouse.button = ev->detail;
+					event.mouse.button = button_indices[ev->detail];
 
 					event.mouse.x = ev->event_x;
 					event.mouse.y = ev->event_y;
