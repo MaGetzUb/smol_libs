@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <malloc.h>
+#include <string.h>
 
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
@@ -11,6 +12,8 @@
 
 #include "thirdparty/tinyfiledialogs.h"
 
+//I build this file on Windows with these arguments:
+//cl.exe /Zi /EHsc /nologo /Fo:.\build\ .\smol_pix_font_creator.c /link kernel32.lib user32.lib comdlg32.lib ole32.lib shell32.lib /OUT:.\build\smol_pix_font_creator.exe
 
 char* pix_buffer = NULL;
 char* offsets[128] = {0};
@@ -114,6 +117,7 @@ int main() {
 
 	smol_frame_t* frame = smol_frame_create(width, height, "PixFont creator");
 
+	int prev_char = -1;
 	int cur_char = 0;
 	unsigned* frame_buffer = malloc(sizeof(unsigned) * width * height);
 
@@ -220,7 +224,7 @@ int main() {
 
 		if(smol_key_hit(SMOLK_F5)) {
 			const char* exts[] = { "*.pxf" };
-			char* path = tinyfd_saveFileDialog("Save a pix font", "", sizeof(exts)/sizeof(*exts), exts, NULL, 0);
+			char* path = tinyfd_saveFileDialog("Save a pix font", "", sizeof(exts)/sizeof(*exts), exts, NULL);
 			if(path) save_font(path);
 		}
 
@@ -232,7 +236,7 @@ int main() {
 
 		if(smol_key_hit(SMOLK_F7)) {
 			const char* exts[] = { "*.h", "*.c"};
-			char* path = tinyfd_saveFileDialog("Export C array", "", sizeof(exts)/sizeof(*exts), exts, NULL, 0);
+			char* path = tinyfd_saveFileDialog("Export C array", "", sizeof(exts)/sizeof(*exts), exts, NULL);
 			if(path) export_c_header(path);
 		}
 
@@ -320,11 +324,11 @@ int main() {
 
 		smol_frame_blit_pixels(frame, frame_buffer, width, height, 0, 0, width, height, 0, 0, width, height);
 
-
-		sprintf(title_buf, "PixFont Creator - Current Character: %c", indexes[cur_char]);
-
-		smol_frame_set_title(frame, title_buf);
-
+		if(prev_char != cur_char) {
+			sprintf(title_buf, "PixFont Creator - Current Character: %c", indexes[cur_char]);
+			smol_frame_set_title(frame, title_buf);
+			prev_char = cur_char;
+		}
 	}
 
 	if(frame_buffer) 
@@ -511,6 +515,5 @@ void export_c_header(const char* path) {
 
 }
 
-
-
+ 
 #include "thirdparty/tinyfiledialogs.c"
