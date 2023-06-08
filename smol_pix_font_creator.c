@@ -15,6 +15,9 @@
 char* pix_buffer = NULL;
 char* offsets[128] = {0};
 char* indexes = NULL;
+char rev_indexes[128];
+char char_geometry[128][2];
+
 int num_chars = 0;
 int char_w, char_h;
 
@@ -68,8 +71,10 @@ int main() {
 
 	} else if(stage == 2) {
 
-		const char* exts[] = { ".pxf" };
+		const char* exts[] = { "*.pxf" };
 		char* path = tinyfd_openFileDialog("Open a pix font", "", 1, exts, exts[0], 0);
+		if(!path)
+			exit(0);
 		load_font(path);
 
 	}
@@ -83,10 +88,20 @@ int main() {
 		if(isprint(i) && !isspace(i)) {
 			indexes[index] = (char)i;
 			offsets[i] = &pix_buffer[index*char_w*char_h];
+			rev_indexes[i] = index;
 			index++;
-			printf("%c", i);
 		}
 	}
+
+				
+	const char* previews[] = {
+		"!\"#$%&'()*+,-./0123456789",
+		":;<=>?@",
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"[\\]^_`",
+		"abcdefghijklmnopqrstuvwxyz"
+		"{|}~"
+	};
 
 	//Calculate ideal window size based on the character size
 	int scale = 20;
@@ -95,14 +110,30 @@ int main() {
 		scale *= 2;
 
 	int width = char_w * scale;
-	int height = char_h * scale;
+	int height = char_h * scale + char_h*5;
 
 	smol_frame_t* frame = smol_frame_create(width, height, "PixFont creator");
 
 	int cur_char = 0;
 	unsigned* frame_buffer = malloc(sizeof(unsigned) * width * height);
 
+	int pen_x;
+	int pen_y;
+
+
+
 	char title_buf[128] = { 0 };
+
+	puts("-----------------------------------");
+	puts("F5 = Save a pixel font file (.pfx)");
+	puts("F6 = Open a pixel font file.");
+	puts("F7 = Export a C header file. (.h)");
+	puts("Place pixels by pressimg LMB");
+	puts("Erase pixels by pressing RMB");
+	puts("Change to next character Right Arrow Key, or Mouse Wheel Up.");
+	puts("Change to last character Left Arrow key, or Mouse Wheel Down.");
+	puts("To offset image on X-axis press and hold shift, and press Left/Right arrow keys");
+	puts("To offset image on Y-axis press and hold shift, and press Up/Down arrow keys");
 
 	while(!smol_frame_is_closed(frame)) {
 
@@ -117,31 +148,33 @@ int main() {
 	#define CHAR_PIX_AT(px, py) offsets[indexes[cur_char]][(px) + (py)*char_w]
 	#define FB_PIX_AT(px, py) frame_buffer[(px) + (py) * width]
 
-		for(int y = 0; y < height; y++)
+		for(int y = 0; y < char_h*scale; y++)
 		for(int x = 0; x < width; x++)
-			FB_PIX_AT(x, y) = ((y / scale) < char_h/3) || ((y/scale) > ((char_h/3)*2+1)) ? 0xFFCCCCCC : 0xFFFFFFFF;
+			FB_PIX_AT(x, y) = (y < ((1*char_h/3+0)*scale)) || (y > ((2*char_h/3+1)*scale)) ? 0xFFCCCCCC : 0xFFFFFFFF;
 
 
-		if(smol_mouse_hit(1)) {
-			int x = smol_mouse_x() / scale;
-			int y = smol_mouse_y() / scale;
-			CHAR_PIX_AT(x, y) = 1;
-		}
+		pen_x = smol_mouse_x() / scale;
+		pen_y = smol_mouse_y() / scale;
 
-		if(smol_mouse_hit(2)) {
-			int x = smol_mouse_x() / scale;
-			int y = smol_mouse_y() / scale;
-			CHAR_PIX_AT(x, y) = 0;
-		}
-
+	
 		cur_char += smol_mouse_move_z();
 		if(smol_key_down(SMOLK_LSHIFT)) {
 
+			if(smol_mouse_y() < char_h * scale) {
+				if(smol_mouse_down(1)) {
+					CHAR_PIX_AT(pen_x, pen_y) = 1;
+				}
+
+				if(smol_mouse_down(2)) {
+					CHAR_PIX_AT(pen_x, pen_y) = 0;
+				}
+			}
+
 			if(smol_key_hit(SMOLK_RIGHT)) {
 				for(unsigned y = char_h-1; y < char_h; y--)
-				for(unsigned x = char_h-1; x < char_w; x--) 
+				for(unsigned x = char_w-1; x < char_w; x--) 
 				{
-					CHAR_PIX_AT(x, y) = CHAR_PIX_AT((char_w + (x - 1)) % char_w, y);
+					CHAR_PIX_AT(x, y) = CHAR_PIX_AT((char_w + x - 1) % char_w, y);
 				}
 			}
 			
@@ -149,11 +182,38 @@ int main() {
 				for(unsigned y = 0; y < char_h; y++)
 				for(unsigned x = 0; x < char_w; x++) 
 				{
-					CHAR_PIX_AT(x, y) = CHAR_PIX_AT((char_w + (x + 1)) % char_w, y);
+					CHAR_PIX_AT(x, y) = CHAR_PIX_AT((char_w + x + 1) % char_w, y);
+				}
+			}
+
+			if(smol_key_hit(SMOLK_DOWN)) {
+				for(unsigned y = char_h-1; y < char_h; y--)
+				for(unsigned x = char_w-1; x < char_w; x--) 
+				{
+					CHAR_PIX_AT(x, y) = CHAR_PIX_AT(x, (char_h + y - 1) % char_h);
+				}
+			}
+			
+			if(smol_key_hit(SMOLK_UP)) {
+				for(unsigned y = 0; y < char_h; y++)
+				for(unsigned x = 0; x < char_w; x++) 
+				{
+					CHAR_PIX_AT(x, y) = CHAR_PIX_AT(x, (char_h + y + 1) % char_h);
 				}
 			}
 
 		} else {
+
+			if(smol_mouse_y() < char_h * scale) {
+				if(smol_mouse_hit(1)) {
+					CHAR_PIX_AT(pen_x, pen_y) = 1;
+				}
+
+				if(smol_mouse_hit(2)) {
+					CHAR_PIX_AT(pen_x, pen_y) = 0;
+				}
+			}
+
 			if(smol_key_hit(SMOLK_RIGHT)) cur_char++;
 			if(smol_key_hit(SMOLK_LEFT)) cur_char--;
 		}
@@ -161,19 +221,19 @@ int main() {
 		if(smol_key_hit(SMOLK_F5)) {
 			const char* exts[] = { "*.pxf" };
 			char* path = tinyfd_saveFileDialog("Save a pix font", "", sizeof(exts)/sizeof(*exts), exts, NULL, 0);
-			save_font(path);
+			if(path) save_font(path);
 		}
 
 		if(smol_key_hit(SMOLK_F6)) {
 			const char* exts[] = { "*.pxf" };
 			char* path = tinyfd_openFileDialog("Open a pix font", "", sizeof(exts)/sizeof(*exts), exts, NULL, 0);
-			load_font(path);
+			if(path) load_font(path);
 		}
 
 		if(smol_key_hit(SMOLK_F7)) {
 			const char* exts[] = { "*.h", "*.c"};
 			char* path = tinyfd_saveFileDialog("Export C array", "", sizeof(exts)/sizeof(*exts), exts, NULL, 0);
-			export_c_header(path);
+			if(path) export_c_header(path);
 		}
 
 		if(cur_char < 0) cur_char = 0;
@@ -185,10 +245,21 @@ int main() {
 		//	FB_PIX_AT(x, y*scale) = 0xFF444444;
 		//}
 
+		//Drag hor grid
+		for(int j = 0; j < char_h+1; j++)
 		for(int i = 0; i < width; i++) {
-			FB_PIX_AT(i, (1*char_h/3+0)*scale) = 0xFF888888;
-			FB_PIX_AT(i, (2*char_h/3+1)*scale) = 0xFF888888;
+			FB_PIX_AT(i, j*scale) = 0xFF888888;
+			FB_PIX_AT(i, j*scale) = 0xFF888888;
 		}
+
+		//Draw ver grid
+		for(int j = 0; j < char_h*scale; j++)
+		for(int i = 0; i < char_w; i++) {
+			FB_PIX_AT(i*scale, j) = 0xFF888888;
+			FB_PIX_AT(i*scale, j) = 0xFF888888;
+		}
+
+
 
 		for(int y = 0; y < char_h; y++)
 		for(int x = 0; x < char_w; x++)
@@ -202,6 +273,49 @@ int main() {
 				}
 			}
 		}
+		#undef CHAR_PIX_AT
+
+		//Render previews:
+
+		#define CHAR_PIX_AT(px, py) offsets[c][(px) + (py)*char_w]
+		
+		char hover = -1;
+		for(int i = 0; i < 5; i++) {
+			int l = strlen(previews[i]);
+			for(int j = 0; j < l; j++) {
+				char c = previews[i][j];
+
+				if(
+					smol_mouse_x() >= j * char_w && smol_mouse_x() <= (j * char_w + char_w) &&
+					smol_mouse_y() >= ((char_h * scale) + i * char_h) && smol_mouse_y() <= ((char_h * scale) + i * char_h + char_h)
+				) {
+					if(smol_mouse_hit(1)) {
+						cur_char = rev_indexes[c];
+					}
+					hover = c;
+				}
+
+				for(int y = 0; y < char_h; y++) 
+				for(int x = 0; x < char_w; x++) 
+				{
+					unsigned color = 0xFFAAAAAA;
+					if(rev_indexes[c] == cur_char) color = 0xFF00AA00;
+					if(rev_indexes[hover] == c) color = 0xFFFFAAAA;
+					if(CHAR_PIX_AT(x, y)) color = 0xFF000000;
+					FB_PIX_AT(j * char_w + x, (char_h * scale) + i * char_h + y) = color;
+				}
+			}
+		}
+		#undef CHAR_PIX_AT
+
+		if(smol_mouse_y() < char_h*scale) {
+			for(int x = 0; x < scale; x++) {
+				FB_PIX_AT(pen_x*scale+x, pen_y*scale) = 0xFFFF0000;
+				FB_PIX_AT(pen_x*scale+x, pen_y*scale+(scale-1)) = 0xFFFF0000;
+				FB_PIX_AT(pen_x*scale, pen_y*scale+x) = 0xFFFF0000;
+				FB_PIX_AT(pen_x*scale+(scale-1), pen_y*scale+x) = 0xFFFF0000;
+			}
+		}
 
 
 		smol_frame_blit_pixels(frame, frame_buffer, width, height, 0, 0, width, height, 0, 0, width, height);
@@ -211,7 +325,6 @@ int main() {
 
 		smol_frame_set_title(frame, title_buf);
 
-		#undef CHAR_PIX_AT
 	}
 
 	if(frame_buffer) 
@@ -263,6 +376,20 @@ void load_font(const char* path) {
 		}
 	}
 
+	fgetc(file);
+	
+	for(int i = 0; i < num_chars; i++) {
+		char c;
+		int x;
+		int w;
+		if(fscanf(file, "%c: %d %d\n", &c, &x, &w)) {
+			char_geometry[c][0] = x;
+			char_geometry[c][1] = w;
+		} else {
+			break;
+		}
+	}
+
 	#undef CHAR_PIX_AT
 
 	fclose(file);
@@ -278,16 +405,35 @@ void save_font(const char* path) {
 
 	const char* next[] = { ", ", "\n" };
 
+
+
 	for(int i = 0; i < num_chars; i++) {
 		fprintf(file, "%c:\n", indexes[i]);
+		
+		int minX = 32;
+		int maxX = 0;
+		
 		for(int y = 0; y < char_h; y++) 
 		for(int x = 0; x < char_w; x++) {
 			char ch = (CHAR_PIX_AT(x, y) ? '1' : '0');
+			if(ch == '1') {
+				if(x < minX) minX = x;
+				if(x > maxX) maxX = x;
+			}
 			fprintf(file, "%c%s", ch, next[(x + 1) >= char_w]);
+
+			if(maxX > minX) {
+				char_geometry[indexes[i]][0] = minX;
+				char_geometry[indexes[i]][1] = (maxX - minX);
+			}
 		}
 		
 	}
 	#undef CHAR_PIX_AT
+	fputc('\n', file);
+	for(int i = 0; i < num_chars; i++) {
+		fprintf(file, "%c: %d %d\n", indexes[i], char_geometry[indexes[i]][0], char_geometry[indexes[i]][1]);
+	}
 
 	fclose(file);
 
@@ -343,8 +489,28 @@ void export_c_header(const char* path) {
 	}
 
 	fprintf(file, "};\n");
+
+#if 1
+	fputc('\n', file);
+	fputs("//This array contains the x-offset where character's most left pixel is and the character width.\n", file);
+	fprintf(file, "static char PXF_%s_OFFSET_X_WIDTH[128][2] = {\n", font_name);
+	for(int i = 0; i < num_chars; i++) {
+		if(indexes[i] == '\'')
+			fprintf(file, "\t[\'\\\'\'] = {%d, %d}%s", char_geometry[indexes[i]][0], char_geometry[indexes[i]][1], next_char[(i+1) >= num_chars]);
+		else if(indexes[i] == '\\')
+			fprintf(file, "\t[\'\\\\\'] = {%d, %d}%s", char_geometry[indexes[i]][0], char_geometry[indexes[i]][1], next_char[(i+1) >= num_chars]);
+		else 
+			fprintf(file, "\t[\'%c\'] = {%d, %d}%s", indexes[i], char_geometry[indexes[i]][0], char_geometry[indexes[i]][1], next_char[(i+1) >= num_chars]);
+	}
+	fprintf(file, "};\n");
+#endif 
+
 	#undef CHAR_PIX_AT
 
 	fclose(file);
 
 }
+
+
+
+#include "thirdparty/tinyfiledialogs.c"
