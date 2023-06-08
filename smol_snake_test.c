@@ -17,35 +17,56 @@
 #define OLIVEC_IMPLEMENTATION
 #include "thirdparty/olive.c"
 
-#include "smol_font.h"
+#include "smol_font_16x16.h"
 
-static Olivec_Font smol_font = {
-	.glyphs = &PXF_SMOL_FONT_DATA[0][0][0],
-	.width = PXF_SMOL_FONT_WIDTH,
-	.height = PXF_SMOL_FONT_HEIGHT
+typedef struct {
+	char offset_x;
+	char width;
+} Olivec_Font_Hor_Geometry;
+
+typedef struct {
+	const char* glyphs;
+	int width;
+	int height;
+	Olivec_Font_Hor_Geometry* geometry;
+} Olivec_Font_;
+
+static Olivec_Font_ smol_font_ = {
+	.glyphs = &PXF_SMOL_FONT_16X16_DATA[0][0][0],
+	.width = PXF_SMOL_FONT_16X16_WIDTH,
+	.height = PXF_SMOL_FONT_16X16_HEIGHT,
+	.geometry = &PXF_SMOL_FONT_16X16_OFFSET_X_WIDTH
 };
 
+
 #define SNAKE_SIZE 20
-#define ARENA_W 40
-#define ARENA_H 25
+#define ARENA_W 20
+#define ARENA_H 20
+#define HUD_H 100 //Pixels
 
 #define SCREEN_W (ARENA_W * SNAKE_SIZE)
-#define SCREEN_H (ARENA_W * SNAKE_SIZE)
+#define SCREEN_H (ARENA_H * SNAKE_SIZE + HUD_H)
 
-uint32_t pixels[600][800];
+uint32_t pixels[SCREEN_H][SCREEN_W];
 
 typedef struct {
 	int x, y;
 } snek_t;
 
 
+
 #define SPEED_FORMULA (0.3 - fmin(pow((snek_len - 3) / 100., 1.25), 1.0)*0.275)
+
+
+OLIVECDEF void olivec_text_(Olivec_Canvas oc, const char* text, int tx, int ty, Olivec_Font_ font, size_t glyph_size, uint32_t color);
+
 
 int main(int argc, char* argv[]) {
 
-	smol_frame_t* frame  = smol_frame_create(800, 600, "snek");
-	Olivec_Canvas canvas = olivec_canvas(pixels, 800, 600, 800);
+	smol_frame_t* frame  = smol_frame_create(SCREEN_W, SCREEN_H, "snek");
+	Olivec_Canvas canvas = olivec_canvas(pixels, SCREEN_W, SCREEN_H, SCREEN_W);
 
+	char occupied_arena[ARENA_W * ARENA_H];
 
 	snek_t snek_pieces[10000];
 	int snek_len = 3;
@@ -55,6 +76,7 @@ int main(int argc, char* argv[]) {
 	for(int i = 1; i < snek_len; i++) {
 		snek_pieces[i].x = snek_pieces[i - 1].x-1;
 		snek_pieces[i].y = snek_pieces[i - 1].y;
+		occupied_arena[snek_pieces[i].x + snek_pieces[i].y * ARENA_W] = 1;
 	}
 	double next_step = SPEED_FORMULA;
 	double move_step = next_step;
@@ -92,6 +114,8 @@ int main(int argc, char* argv[]) {
 
 		if(move_step <= 0.) {
 
+			//Remove occupation from tail
+			occupied_arena[snek_pieces[snek_len-1].x + snek_pieces[snek_len-1].y * ARENA_W] = 0;
 			for(uint32_t i = snek_len-1; i > 0; i--) {
 				snek_pieces[i].x = snek_pieces[i - 1].x;
 				snek_pieces[i].y = snek_pieces[i - 1].y;
@@ -99,6 +123,9 @@ int main(int argc, char* argv[]) {
 
 			snek_pieces[0].x += dx;
 			snek_pieces[0].y += dy;
+
+			//Add occupation to head
+			occupied_arena[snek_pieces[0].x + snek_pieces[0].y * ARENA_W] = 1;
 			
 			if(snek_pieces[0].x > (ARENA_W - 1)) snek_pieces[0].x = 0;
 			if(snek_pieces[0].y > (ARENA_H - 1)) snek_pieces[0].y = 0;
@@ -124,6 +151,11 @@ int main(int argc, char* argv[]) {
 				pickup_x = rand() % ARENA_W;
 				pickup_y = rand() % ARENA_H;
 
+				while(occupied_arena[pickup_x + pickup_y * ARENA_W]) {
+					pickup_x = rand() % ARENA_W;
+					pickup_y = rand() % ARENA_H;
+				}
+
 				snek_len++;
 
 				next_step = SPEED_FORMULA;
@@ -140,13 +172,15 @@ int main(int argc, char* argv[]) {
 		}
 
 		olivec_fill(canvas, 0xFF000000AA);
-		olivec_rect(canvas, 0, 500, 800, 300, 0xFF444444);
-		olivec_rect(canvas, 0, 500, 800, 3, 0xFF888888);
+		olivec_rect(canvas, 0, SCREEN_H-HUD_H, SCREEN_W, HUD_H, 0xFF444444);
+		olivec_rect(canvas, 0, SCREEN_H-HUD_H, SCREEN_W, 3, 0xFF888888);
 
 		olivec_rect(canvas, pickup_x * SNAKE_SIZE, pickup_y * SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, 0xFFAA6644);
 
 		sprintf(guibuf, "Points: %d", (snek_len - 3));
-		olivec_text(canvas, guibuf, 10, 510, smol_font, 2, 0xFFFFFF00);
+		olivec_text_(canvas, guibuf, 10, SCREEN_H-HUD_H+10, smol_font_, 1, 0xFFFFFF00);
+		sprintf(guibuf, "FPS: %d", fps);
+		olivec_text_(canvas, guibuf, 10, SCREEN_H-HUD_H+32, smol_font_, 1, 0xFFFFFF00);
 
 		for(int i = 0; i < snek_len; i++) {
 			uint32_t col = (128.+cos((double)i * 6.283/5.0)*63.0);
@@ -156,7 +190,7 @@ int main(int argc, char* argv[]) {
 		}
 
 	
-		smol_frame_blit_pixels(frame, pixels[0], 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
+		smol_frame_blit_pixels(frame, pixels[0], SCREEN_W, SCREEN_H, 0, 0, SCREEN_W, SCREEN_H, 0, 0, SCREEN_W, SCREEN_H);
 
 		dt = smol_timer() - tp1;
 		time_accum += dt;
@@ -177,4 +211,28 @@ int main(int argc, char* argv[]) {
 
 	return 0;
 
+}
+
+OLIVECDEF void olivec_text_(Olivec_Canvas oc, const char *text, int tx, int ty, Olivec_Font_ font, size_t glyph_size, uint32_t color)
+{
+	int gx = tx;
+    for (size_t i = 0; *text; ++i, ++text) {
+        int gy = ty;
+        const char *glyph = &font.glyphs[(*text)*sizeof(char)*font.width*font.height];
+        for (int dy = 0; (size_t) dy < font.height; ++dy) {
+            for (int dx = 0; (size_t) dx < font.geometry[*text].width+1; ++dx) {
+                int px = gx + dx*glyph_size;
+                int py = gy + dy*glyph_size;
+                if (0 <= px && px < (int) oc.width && 0 <= py && py < (int) oc.height) {
+                    if (glyph[dy*font.width + dx + font.geometry[*text].offset_x]) {
+                        olivec_rect(oc, px, py, glyph_size, glyph_size, color);
+                    }
+                }
+            }
+        }
+		if(*text == ' ')
+			gx += font.geometry['_'].width;
+		else 
+			gx += (font.geometry[*text].width+2)*glyph_size;
+    }
 }
