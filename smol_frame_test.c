@@ -16,12 +16,12 @@
 #define OLIVEC_IMPLEMENTATION
 #include "thirdparty/olive.c"
 
-#include "smol_font.h"
+#include "smol_font_16x16.h"
 
 static Olivec_Font smol_font = {
-	.glyphs = &PXF_SMOL_FONT_DATA[0][0][0],
-	.width = PXF_SMOL_FONT_WIDTH,
-	.height = PXF_SMOL_FONT_HEIGHT
+	.glyphs = &PXF_SMOL_FONT_16X16_DATA[0][0][0],
+	.width = PXF_SMOL_FONT_16X16_WIDTH,
+	.height = PXF_SMOL_FONT_16X16_HEIGHT
 };
 
 
@@ -126,7 +126,6 @@ int main(int numArgs, const char* argv[]) {
 
 		olivec_rect(canvas, 180, 150, 75, 30, 0xFFCCAA88);
 		olivec_line(canvas, anchorX, anchorY, smol_mouse_x(), smol_mouse_y(), 0xFFFF00FF);
-		
 
 
 		olivec_circle(canvas, smol_mouse_x(), smol_mouse_y(), 10+smol_mouse_z()*2, 0xFF00CC00 | ((int)red) << 16 | (int)blue);
@@ -138,8 +137,8 @@ int main(int numArgs, const char* argv[]) {
 		olivec_text(canvas, "{|}~", 10, 105, smol_font, 1, 0xFFAA00DD);
 
 
-		snprintf(buf, 256, "fps: %d", fps);
-		olivec_text(canvas, buf, 0, 584, smol_font, 2, 0xFFCCFF00);
+		snprintf(buf, 256, "FPS: %d", fps);
+		olivec_text(canvas, buf, 0, 600-32, smol_font, 2, 0xFFCCFF00);
 
 		smol_frame_blit_pixels(frame, surface, 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
 
