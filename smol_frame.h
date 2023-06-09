@@ -91,6 +91,7 @@ Contributions:
 #		include <xcb/xcb.h>
 #		include <xcb/xcb_icccm.h>
 #		include <xcb/xcb_keysyms.h>
+#		include <xcb/xkb.h>
 #		include <X11/keysym.h>
 #	elif defined(SMOL_FRAME_BACKEND_WAYLAND)
 #		include <wayland-server.h>
@@ -102,6 +103,7 @@ Contributions:
 #		include <X11/X.h>
 #		include <X11/Xlib.h>
 #		include <X11/keysym.h>
+#		include <X11/XKBlib.h>
 #		include <X11/Xutil.h>
 #	endif 
 #elif defined(__APPLE__)
@@ -295,7 +297,7 @@ typedef enum {
 	SMOL_FRAME_EVENT_MOUSE_HOR_WHEEL,
 	SMOL_FRAME_EVENT_FOCUS_LOST,
 	SMOL_FRAME_EVENT_FOCUS_GAINED,
-	SMOL_FRAME_EVENT_TEXTINPUT
+	SMOL_FRAME_EVENT_TEXT_INPUT
 } smol_frame_event_type;
 
 //Most rudimentary event structure
@@ -305,6 +307,7 @@ typedef struct _smol_frame_event_t {
 		smol_frame_key_event key;
 		smol_frame_mouse_event mouse;
 		smol_frame_resize_event size;
+		unsigned int unicode;
 	};
 } smol_frame_event_t;
 
@@ -390,10 +393,13 @@ typedef struct _smol_frame_t {
 #if defined(SMOL_PLATFORM_WINDOWS)
 	HWND frame_handle_win32;
 	HMODULE module_handle_win32;
+	unsigned short high_utf16_surrogate;
 #elif defined(SMOL_PLATFORM_LINUX) 
 #	if defined(SMOL_FRAME_BACKEND_X11)
 	Display* display_server_connection;
 	Window frame_window;
+	XIM im;
+	XIC ic;
 #	elif defined(SMOL_FRAME_BACKEND_XCB)
 	xcb_connection_t* display_server_connection;
 	xcb_screen_t* screen;
@@ -587,7 +593,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	SMOL_ASSERT("Unable to allocate result!" && result);
 	memset(result, 0, sizeof(smol_frame_t));
 
-	wchar_t wide_title[1024];
+	wchar_t wide_title[256] = { 0 };
 	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 1024);
 
 	wnd = CreateWindowExW(
@@ -625,8 +631,8 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 }
 
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
-	wchar_t wide_title[1024];
-	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 1024);	
+	wchar_t wide_title[256] = { 0 };
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 256);	
 	SMOL_ASSERT("Failed to set window title!" && SetWindowTextW(frame->frame_handle_win32, wide_title));
 }
 
@@ -810,19 +816,44 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 
 			smol_event_queue_push_back(&frame->event_queue, &event);
 
-			return 1;
+			return 0;
+		} break;
+		case WM_CHAR: {
+
+			unsigned int chr = (unsigned int)wParam;
+			unsigned int surrogate = (unsigned int)(wParam >> 10);
+
+			if(surrogate == 0xD800) {
+				frame->high_utf16_surrogate = (wParam & 0x3FF);
+				return 0;
+			} else if(surrogate == 0xDC00) {
+				chr = ((unsigned int)frame->high_utf16_surrogate  << 10) | ((unsigned int)(wParam) & 0x3FF);
+				frame->high_utf16_surrogate = 0;
+			}
+			
+			smol_frame_event_t event = { 0 };
+			event.type = SMOL_FRAME_EVENT_TEXT_INPUT;
+			event.unicode = chr;
+
+			smol_event_queue_push_back(&frame->event_queue, &event);
+
+			return 0;
 		} break;
 		case WM_SETFOCUS: {
+
 			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_FOCUS_GAINED;
 			smol_event_queue_push_back(&frame->event_queue, &event);
-			return 1;
+
+			return 0;
 		} break;
 		case WM_KILLFOCUS: {
+
 			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_FOCUS_LOST;
 			smol_event_queue_push_back(&frame->event_queue, &event);
-			return 1;
+
+			return 0;
 		} break;
 	}
 
@@ -1028,9 +1059,13 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	
 	Display* display = XOpenDisplay(NULL);
 	Window parentWindow = None;
-	Window resultWindow = None;
+	Window result_window = None;
 	XWindowAttributes attributes = { 0 };
 	XSetWindowAttributes setAttributes = { 0 };
+	XIM im;
+	XIC ic;
+    XIMStyles *styles;
+    XIMStyle requested_style;
 	smol_frame_t* result = NULL;
 	Status status;
 
@@ -1055,7 +1090,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		ButtonMotionMask    | FocusChangeMask
 	);
 
-	resultWindow = XCreateWindow(
+	result_window = XCreateWindow(
 		display, 
 		parentWindow, 
 		(attributes.width + width) >> 1, 
@@ -1070,7 +1105,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		&setAttributes
 	);
 
-	if(resultWindow == None)
+	if(result_window == None)
 		return NULL;
 
 
@@ -1080,7 +1115,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		sizeHints->flags = PMinSize | PMaxSize;
 		sizeHints->min_width = sizeHints->max_width = width;
 		sizeHints->min_height = sizeHints->max_height = height;
-		XSetWMNormalHints(display, resultWindow, sizeHints);
+		XSetWMNormalHints(display, result_window, sizeHints);
 
 		setAttributes.override_redirect = True;
 	}
@@ -1090,21 +1125,29 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		smol__wm_delete_window_atom = XInternAtom(display, "WM_DELETE_WINDOW", False);
 	}
 
-	status = XSetWMProtocols(display, resultWindow, &smol__wm_delete_window_atom, 1);
+	status = XSetWMProtocols(display, result_window, &smol__wm_delete_window_atom, 1);
 
 	SMOL_ASSERT("Failed to set Window protocols!" && (status != 0));
 
-	XStoreName(display, resultWindow, title);
-	XMapWindow(display, resultWindow);
+	XStoreName(display, result_window, title);
+	XMapWindow(display, result_window);
+
+	im = XOpenIM(display, NULL, NULL, NULL);
+	XGetIMValues(im, XNQueryInputStyle, &styles, NULL);
+	ic = XCreateIC(im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, result_window, NULL);
+
+ 	XSetICFocus(ic);
 	XFlush(display);
 
 	result = SMOL_ALLOC_INSTANCE(smol_frame_t);
 	result->display_server_connection = display;
-	result->frame_window = resultWindow;
+	result->frame_window = result_window;
 	result->event_queue = smol_event_queue_create(2048);
 	result->renderer = NULL;
 	result->width = width;
 	result->height = height;
+	result->ic = ic;
+	result->im = im;
 
 	if(!(flags & SMOL_FRAME_CONFIG_SUPPORT_OPENGL)) {
 		result->renderer = smol_renderer_create(result);
@@ -1125,6 +1168,8 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 void smol_frame_destroy(smol_frame_t* frame) {
 
 	XDestroyWindow(frame->display_server_connection, frame->frame_window);
+	XDestroyIC(frame->ic);
+	XCloseIM(frame->im);
 	XCloseDisplay(frame->display_server_connection);
 
 	smol_event_queue_destroy(&frame->event_queue);
@@ -1141,6 +1186,7 @@ void smol_frame_update(smol_frame_t* frame) {
 	XEvent xevent;
 	while(XPending(frame->display_server_connection)) {
 		XNextEvent(frame->display_server_connection, &xevent);
+		XFilterEvent(&xevent, frame->frame_window);
 		switch(xevent.type) {
 			case Expose: {
 				XWindowAttributes attribs;
@@ -1177,10 +1223,61 @@ void smol_frame_update(smol_frame_t* frame) {
 			case KeyPress:
 			case KeyRelease: 
 			{
+
+				int physical = 1;
+				if(xevent.type == KeyRelease) {
+					XEvent next;
+					if (XPending(frame->display_server_connection)) {
+						XPeekEvent(frame->display_server_connection, &next);
+						if(next.type == KeyPress && next.xkey.time == xevent.xkey.time && next.xkey.keycode == xevent.xkey.keycode) 
+							physical = 0;
+					}
+				}
+
+				//This break could be within the code block above.
+				if(!physical)
+					break;
+
 				smol_frame_event_t event = { 0 };
-				event.type = (xevent.type == KeyRelease) ? SMOL_FRAME_EVENT_KEY_UP: SMOL_FRAME_EVENT_KEY_DOWN;
-				event.key.code = smol_frame_mapkey(XLookupKeysym(&xevent.xkey, 0));
+				event.type = ((xevent.type == KeyRelease) && physical) ? SMOL_FRAME_EVENT_KEY_UP: SMOL_FRAME_EVENT_KEY_DOWN;
+
+				KeySym keysym = XLookupKeysym(&xevent.xkey, 0);
+				event.key.code = smol_frame_mapkey(keysym);
 				smol_event_queue_push_back(&frame->event_queue, &event);
+
+				if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
+					char buffer[6] = {0};
+					Status status = 0;
+					int count = Xutf8LookupString(frame->ic, &xevent.xkey, buffer, 6, &keysym, &status);
+					unsigned int unicode = 0;
+					switch(count) {
+						case 1:
+							unicode = (buffer[0] & 0x7F);
+						break;
+						case 2:
+							unicode = (buffer[0] & 0x1F) << 6 | (buffer[1] & 0x3F);
+						break;
+						case 3:
+							unicode = (buffer[0] & 0x0F) << 12 | (buffer[1] & 0x3F) << 6 | (buffer[2] & 0x3F);
+						break;
+						case 4:
+							unicode = (buffer[0] & 0x07) << 18 | (buffer[1] & 0x3F) << 12 | (buffer[2] & 0x3F) << 6  | (buffer[3] & 0x3F);
+						break;
+						case 5:
+							unicode = (buffer[0] & 0x03) << 24 | (buffer[1] & 0x3F) << 18 | (buffer[2] & 0x3F) << 12 | (buffer[3] & 0x3F) << 6  | (buffer[4] & 0x3F);
+						break;
+						case 6:
+							unicode = (buffer[0] & 0x01) << 30 | (buffer[1] & 0x3F) << 24 | (buffer[2] & 0x3F) << 18 | (buffer[3] & 0x3F) << 12  | (buffer[4] & 0x3F) << 6 | (buffer[5] & 0x3F);
+						break;
+					}
+
+					if(count) {
+						event.type = SMOL_FRAME_EVENT_TEXT_INPUT;
+						event.unicode = unicode;
+						smol_event_queue_push_back(&frame->event_queue, &event);
+					}
+				}
+
 			} 
 			break;
 			case MotionNotify: {
@@ -1448,8 +1545,8 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		(const void*)title
 	);
 
-    xcb_map_window(connection, window);
-    xcb_flush(connection);
+	xcb_map_window(connection, window);
+	xcb_flush(connection);
 
 
 	smol_frame_t* result = SMOL_ALLOC_INSTANCE(smol_frame_t);
