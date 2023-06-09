@@ -1,5 +1,5 @@
 /*
-Copyright © 2023 Marko Ranta (Discord: Coderunner#2271)
+Copyright ï¿½ 2023 Marko Ranta (Discord: Coderunner#2271)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -101,7 +101,7 @@ double smol_timer() {
 double smol_timer() {
 	struct timeval tval;
 	gettimeofday(&tval, NULL);
-	return (double)tval.tv_sec + (double)tval.tv_usec * 1e-9; 
+	return (double)tval.tv_sec + (double)tval.tv_usec * 1e-6; 
 }
 
 #endif 
