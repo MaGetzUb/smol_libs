@@ -466,13 +466,14 @@ void export_c_header(const char* path) {
 	fprintf(file, "#define PXF_%s_HEIGHT %d\n", font_name, char_h);
 	fprintf(file, "\n");
 
-	#define CHAR_PIX_AT(px, py) offsets[indexes[i]][(px) + (py)*char_w]
 
 	const char* next[] = { ", ", "}" };
 	const char* next_char[] = {",\n", "\n"};
 
 	fprintf(file, "static char PXF_%s_DATA[128][PXF_%s_HEIGHT][PXF_%s_WIDTH] = {\n", font_name, font_name, font_name);
 
+	#if 0
+	#define CHAR_PIX_AT(px, py) offsets[indexes[i]][(px) + (py)*char_w]
 	for(int i = 0; i < num_chars; i++) {
 		if(indexes[i] == '\'')
 			fprintf(file, "\t[\'\\\'\'] = {\n");
@@ -489,15 +490,34 @@ void export_c_header(const char* path) {
 			fprintf(file, "%s", next_char[(y+1) >= char_h]);
 		}
 		fprintf(file, "\t}%s", next_char[(i+1) >= num_chars]);
-		
 	}
+	#else 
+	#define CHAR_PIX_AT(px, py) offsets[i][(px) + (py)*char_w]
+	for(int i = 0; i < 128; i++) {
+		if(offsets[i]) {
+			fprintf(file, "\t{/* %c */\n", i);
+			for(int y = 0; y < char_h; y++) {
+				fprintf(file, "\t\t{");
+				for(int x = 0; x < char_w; x++) {
+					char ch = (CHAR_PIX_AT(x, y) ? '1' : '0');
+					fprintf(file, "%c%s", ch, next[(x + 1) >= char_w]);
+				}
+				fprintf(file, "%s", next_char[(y+1) >= char_h]);
+			}
+			fprintf(file, "\t},\n");
+		}
+		else {
+			fprintf(file, "\t{0} /* 0x%x */ %s", i, next_char[(i+1) >= 128]);
+		}
+	}
+	#endif 
 
 	fprintf(file, "};\n");
 
-#if 1
 	fputc('\n', file);
 	fputs("//This array contains the x-offset where character's most left pixel is and the character width.\n", file);
 	fprintf(file, "static char PXF_%s_OFFSET_X_WIDTH[128][2] = {\n", font_name);
+#if 0
 	for(int i = 0; i < num_chars; i++) {
 		if(indexes[i] == '\'')
 			fprintf(file, "\t[\'\\\'\'] = {%d, %d}%s", char_geometry[indexes[i]][0], char_geometry[indexes[i]][1], next_char[(i+1) >= num_chars]);
@@ -506,8 +526,17 @@ void export_c_header(const char* path) {
 		else 
 			fprintf(file, "\t[\'%c\'] = {%d, %d}%s", indexes[i], char_geometry[indexes[i]][0], char_geometry[indexes[i]][1], next_char[(i+1) >= num_chars]);
 	}
-	fprintf(file, "};\n");
+#else 
+	for(int i = 0; i < 128; i++) {
+		if(offsets[i]) {
+			fprintf(file, "/* %c */{%d, %d},\n", i, char_geometry[i][0], char_geometry[i][1]);
+		}
+		else {
+			fprintf(file, "\t{0} /* 0x%x */ %s", i, next_char[(i+1) >= 128]);
+		}
+	}
 #endif 
+	fprintf(file, "};\n");
 
 	#undef CHAR_PIX_AT
 
