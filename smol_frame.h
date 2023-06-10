@@ -47,9 +47,11 @@ XCB is bit more cumbersome, because you need these packages:
 - libxcb-devel
 - libxcb-icccm4-dev
 - libxcb-keysyms1-dev
+- libxkbcommon-dev
+- libxkbcommon-x11-dev
 If there's one unified package, let me know I'll wipe that list.
 Anyway compiling with xcb backend would work like this:
-gcc main.c -lxcb -lxcb-icccm -lxcb-keysyms -o main
+gcc main.c -lxcb -lxcb-icccm -lxcb-keysyms -lxkbcommon -lxkbcommon-x11 -o main
 
 If you're using WAYLAND you have to link those libraries
 accordingly. (Wayland not implemented yet)
@@ -93,6 +95,8 @@ Contributions:
 #		include <xcb/xcb_keysyms.h>
 #		include <xcb/xkb.h>
 #		include <X11/keysym.h>
+#		include <xkbcommon/xkbcommon.h>
+#		include <xkbcommon/xkbcommon-x11.h>
 #	elif defined(SMOL_FRAME_BACKEND_WAYLAND)
 #		include <wayland-server.h>
 #		include <wayland-client-core.h>
@@ -353,14 +357,22 @@ typedef enum {
 #	endif
 #endif 
 
+#ifndef SMOL_SYMBOLIFY()
+#define SMOL_SYMBOLIFY(x) #x
+#endif 
+
+#ifndef SMOL_STRINGIFY
+#define SMOL_STRINGIFY( x ) SMOL_SYMBOLIFY(x)
+#endif 
+
 #ifndef SMOL_ASSERT
 #define SMOL_ASSERT(condition) \
 	if(!(condition)) \
-		printf(\
+		puts(\
 			"SMOL FRAME ASSERTION FAILED!\n" \
-			#condition "\n" \
-			"IN FILE '" __FILE__ "'\n" \
-			"ON LINE %d", __LINE__ \
+			"CONDITION: " #condition "\n" \
+			"IN FILE: '" __FILE__ "'\n" \
+			"ON LINE: " SMOL_STRINGIFY(__LINE__) "\n" \
 		), \
 		SMOL_BREAKPOINT()
 #endif 
@@ -405,6 +417,11 @@ typedef struct _smol_frame_t {
 	xcb_screen_t* screen;
 	xcb_window_t frame_window;
 #	endif
+#	if defined(SMOL_FRAME_BACKEND_XCB) || defined(SMOL_FRAME_BACKEND_WAYLAND) 
+	struct xkb_context* kbcontext;
+	struct xkb_keymap* kbkeymap;
+	struct xkb_state* kbstate;
+#endif 
 	smol_software_renderer_t* renderer;
 #endif 
 	int width;
@@ -1457,9 +1474,14 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	}
 
 	const xcb_setup_t* setup = xcb_get_setup(connection);
+
 	xcb_screen_t* screen = xcb_setup_roots_iterator(setup).data;
 
 	xcb_window_t window = xcb_generate_id(connection);
+
+	struct xkb_context* kbcontext;
+	struct xkb_keymap* kbkeymap;
+	struct xkb_state* kbstate;
 
 	uint32_t event_mask = (
 		XCB_EVENT_MASK_EXPOSURE | 
@@ -1548,6 +1570,36 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	xcb_map_window(connection, window);
 	xcb_flush(connection);
 
+	{
+		uint16_t major, minor;
+		uint8_t base_event;
+		uint8_t error;
+
+		int res = xkb_x11_setup_xkb_extension(
+			connection, 
+			XCB_XKB_MAJOR_VERSION, 
+			XCB_XKB_MINOR_VERSION,
+			XKB_X11_SETUP_XKB_EXTENSION_NO_FLAGS,
+			&major,
+			&minor, 
+			&base_event,
+			&error
+		);
+
+		SMOL_ASSERT("Failed to setup xkb extension for x11!" && res);
+	}
+
+
+	int device_id = xkb_x11_get_core_keyboard_device_id(connection);
+
+	SMOL_ASSERT("Invalid device id!" && device_id >= 0);
+
+	//TODO: Error checking
+	kbcontext = xkb_context_new(0);
+
+	kbkeymap = xkb_x11_keymap_new_from_device(kbcontext, connection, device_id, XKB_KEYMAP_COMPILE_NO_FLAGS);
+
+	kbstate = xkb_x11_state_new_from_device(kbkeymap, connection, device_id);
 
 	smol_frame_t* result = SMOL_ALLOC_INSTANCE(smol_frame_t);
 	memset(result, 0, sizeof(smol_frame_t));
@@ -1557,6 +1609,9 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	result->height = height;
 	result->screen = screen;
 	result->frame_window = window;
+	result->kbcontext = kbcontext;
+	result->kbkeymap = kbkeymap;
+	result->kbstate = kbstate;
 	result->renderer = smol_renderer_create(result);
 
 	if(smol__num_frames == 0) {
@@ -1583,8 +1638,14 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {
+	
+	xkb_state_unref(frame->kbstate);
+	xkb_keymap_unref(frame->kbkeymap);
+	xkb_context_unref(frame->kbcontext);
 
 	xcb_disconnect(frame->display_server_connection);
+
+
 
 	smol_event_queue_destroy(&frame->event_queue);
 	if(frame->renderer) {
@@ -1607,7 +1668,10 @@ void smol_frame_update(smol_frame_t* frame) {
 	int button_indices[] = {0, 1, 3, 2, 4, 5};
 
 	for(xcb_generic_event_t* xevent; (xevent = xcb_poll_for_event(frame->display_server_connection));) {
-		switch(xevent->response_type & 0x7F) {
+
+		uint8_t response = xevent->response_type & 0x7F;
+
+		switch(response) {
 			case XCB_EXPOSE: {
 
 				xcb_expose_event_t* ev = (xcb_expose_event_t*)xevent;
@@ -1641,13 +1705,40 @@ void smol_frame_update(smol_frame_t* frame) {
 			case XCB_KEY_PRESS: 
 			case XCB_KEY_RELEASE: 
 			{
+
+				int physical = 1;
 				xcb_key_press_event_t* ev = (xcb_key_press_event_t*)xevent;
+
+				xkb_state_update_key(frame->kbstate, ev->detail, response == XCB_KEY_PRESS ? XKB_KEY_DOWN : XKB_KEY_UP);
+
+				if(response == XCB_KEY_PRESS) {
+					xcb_generic_event_t* next = xcb_poll_for_queued_event(frame->display_server_connection);
+					if(next && (next->response_type & 0x7F) == XCB_KEY_RELEASE) {
+						xcb_key_press_event_t* nev = (xcb_key_press_event_t*)next;
+						if(nev->response_type == XCB_KEY_RELEASE && ev->time == nev->time && ev->detail == nev->detail) {
+							physical = 0;
+						}
+					}
+				}
+
+				if(!physical)
+					break;
+
 				smol_frame_event_t event = {0};
-				event.type = xevent->response_type == XCB_KEY_PRESS ? SMOL_FRAME_EVENT_KEY_DOWN : SMOL_FRAME_EVENT_KEY_UP;
+				event.type = ((xevent->response_type & 0x7F) == XCB_KEY_PRESS && physical) ? SMOL_FRAME_EVENT_KEY_DOWN : SMOL_FRAME_EVENT_KEY_UP;
 				xcb_keysym_t keysym = xcb_key_symbols_get_keysym(smol__keysyms, ev->detail, 0);
 				event.key.code = smol_frame_mapkey(keysym);
 				smol_event_queue_push_back(&frame->event_queue, &event);
 
+				
+				if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
+					event.type = SMOL_FRAME_EVENT_TEXT_INPUT;
+					event.unicode = xkb_state_key_get_utf32(frame->kbstate, ev->detail);
+					event.unicode = (ev->state & XCB_MOD_MASK_SHIFT) ? toupper(event.unicode) : event.unicode;
+					smol_event_queue_push_back(&frame->event_queue, &event);
+				}
+
+				
 			} break;
 			case XCB_MOTION_NOTIFY: {
 				xcb_motion_notify_event_t* ev = (xcb_motion_notify_event_t*)xevent;

@@ -5,7 +5,7 @@
 #include <locale.h>
 #include <ctype.h>
 
-//#define SMOL_FRAME_BACKEND_XCB
+#define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
