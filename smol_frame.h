@@ -109,6 +109,7 @@ Contributions:
 #		include <X11/keysym.h>
 #		include <X11/XKBlib.h>
 #		include <X11/Xutil.h>
+#		include <X11/Xatom.h>
 #	endif 
 #elif defined(__APPLE__)
 #	ifndef SMOL_PLATFORM_MAX_OS
@@ -121,6 +122,8 @@ Contributions:
 
 //Forward declaration for frame handle
 typedef struct _smol_frame_t smol_frame_t;
+
+typedef struct _smol_event_queue_t smol_event_queue_t;
 
 //Forward declaration for frame event 
 typedef struct _smol_frame_event_t smol_frame_event_t;
@@ -187,6 +190,18 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title);
 // - int srcW             -- Source width
 // - int srcH             -- Source height
 void smol_frame_blit_pixels(smol_frame_t* frame, unsigned int* pixBuf, int pixBufWidth, int pixBufHeight, int dstX, int dstY, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH);
+
+//smol_frame_get_event_queue - Get the pointer to event queue.
+//Arguments: 
+// - smol_frame_t* frame -- A window that's event queue is requested
+//Returns: smol_event_queue_t* - the pointer to event queue
+smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame);
+
+
+//smol_frame_get_event_queue - Set the frame's event queue.
+//Arguments: 
+// - smol_frame_t* frame -- A window that's event queue is being set
+void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* eventQueue);
 
 #if defined(SMOL_PLATFORM_WINDOWS)
 
@@ -262,11 +277,28 @@ typedef enum {
 	SMOL_FRAME_CONFIG_HAS_TITLEBAR        = 0x00000001U,
 	SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON = 0x00000002U,
 	SMOL_FRAME_CONFIG_IS_RESIZABLE        = 0x00000004U,
-	SMOL_FRAME_CONFIG_SUPPORT_OPENGL	  = 0x00000008U,
-	SMOL_FRAME_DEFAULT_CONFIG      		  = (
-		SMOL_FRAME_CONFIG_HAS_TITLEBAR
+	SMOL_FRAME_CONFIG_SUPPORT_OPENGL      = 0x00000008U,
+	SMOL_FRAME_CONFIG_OWNS_EVENT_QUEUE    = 0x00000010U,
+	SMOL_FRAME_DEFAULT_CONFIG             = (
+		SMOL_FRAME_CONFIG_HAS_TITLEBAR | SMOL_FRAME_CONFIG_OWNS_EVENT_QUEUE
 	)
 } smol_frame_config;
+
+//All the event types
+typedef enum smol_frame_event_type_ {
+	SMOL_FRAME_EVENT_CLOSED = 1,
+	SMOL_FRAME_EVENT_RESIZE,
+	SMOL_FRAME_EVENT_KEY_DOWN,
+	SMOL_FRAME_EVENT_KEY_UP,
+	SMOL_FRAME_EVENT_MOUSE_MOVE,
+	SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN,
+	SMOL_FRAME_EVENT_MOUSE_BUTTON_UP,
+	SMOL_FRAME_EVENT_MOUSE_VER_WHEEL,
+	SMOL_FRAME_EVENT_MOUSE_HOR_WHEEL,
+	SMOL_FRAME_EVENT_FOCUS_LOST,
+	SMOL_FRAME_EVENT_FOCUS_GAINED,
+	SMOL_FRAME_EVENT_TEXT_INPUT
+} smol_frame_event_type;
 
 //Keyboard event
 typedef struct {
@@ -288,30 +320,20 @@ typedef struct {
 	int height;
 } smol_frame_resize_event;
 
-//All the event types
-typedef enum {
-	SMOL_FRAME_EVENT_CLOSED = 1,
-	SMOL_FRAME_EVENT_RESIZE,
-	SMOL_FRAME_EVENT_KEY_DOWN,
-	SMOL_FRAME_EVENT_KEY_UP,
-	SMOL_FRAME_EVENT_MOUSE_MOVE,
-	SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN,
-	SMOL_FRAME_EVENT_MOUSE_BUTTON_UP,
-	SMOL_FRAME_EVENT_MOUSE_VER_WHEEL,
-	SMOL_FRAME_EVENT_MOUSE_HOR_WHEEL,
-	SMOL_FRAME_EVENT_FOCUS_LOST,
-	SMOL_FRAME_EVENT_FOCUS_GAINED,
-	SMOL_FRAME_EVENT_TEXT_INPUT
-} smol_frame_event_type;
+typedef struct {
+	unsigned int codepoint;
+} smol_frame_text_input;
+
 
 //Most rudimentary event structure
 typedef struct _smol_frame_event_t {
 	smol_frame_event_type type;
+	smol_frame_t* frame;
 	union {
 		smol_frame_key_event key;
 		smol_frame_mouse_event mouse;
 		smol_frame_resize_event size;
-		unsigned int unicode;
+		smol_frame_text_input input;
 	};
 } smol_frame_event_t;
 
@@ -357,7 +379,7 @@ typedef enum {
 #	endif
 #endif 
 
-#ifndef SMOL_SYMBOLIFY()
+#ifndef SMOL_SYMBOLIFY
 #define SMOL_SYMBOLIFY(x) #x
 #endif 
 
@@ -377,11 +399,13 @@ typedef enum {
 		SMOL_BREAKPOINT()
 #endif 
 
-typedef struct {
+typedef struct _smol_event_queue_t {
 	smol_frame_event_t* events;
 	int event_count;
 	int front_index;
 	int back_index;
+	int mid_point; //Used to forr offset calculation.. (MAX_INT/2)-(MAX_INT/2 % event_count)
+	int refs;
 } smol_event_queue_t;
 
 #if !defined(SMOL_PLATFORM_WINDOWS)
@@ -435,7 +459,7 @@ typedef struct _smol_frame_t {
 	int mouse_z_accum;
 	int mouse_w_accum;
 
-	smol_event_queue_t event_queue;
+	smol_event_queue_t* event_queue;
 } smol_frame_t;
 
 
@@ -443,22 +467,29 @@ typedef struct _smol_frame_t {
 
 //TODO: sanity check this code that it doesn't have logical flaws, so far it has worked fine. ~MaGetzUb
 
-smol_event_queue_t smol_event_queue_create(int numEvents) {
+smol_event_queue_t* smol_event_queue_create(int numEvents) {
 
-	smol_event_queue_t result = { 0 };
-	result.events = SMOL_ALLOC_ARRAY(smol_frame_event_t, numEvents);
-	result.event_count = numEvents;
-	result.back_index = 0;
-	result.front_index = 0;
+	smol_event_queue_t* result = SMOL_ALLOC_INSTANCE(smol_event_queue_t);
+	result->events = SMOL_ALLOC_ARRAY(smol_frame_event_t, numEvents);
+	result->event_count = numEvents;
+	result->back_index = 0;
+	result->front_index = 0;
+	result->mid_point = 0x7FFFFFFF;
+	result->mid_point -= (result->mid_point % result->event_count);
+	result->refs = 1;
 
 	return result;
 }
 
-void smol_event_queue_destroy(smol_event_queue_t* queue) {
-	queue->back_index = 0;
-	queue->front_index = 0;
-	queue->event_count = 0;
-	SMOL_FREE(queue->events);
+void smol_event_queue_destroy(smol_event_queue_t** queue) {
+	if(--(*queue)->refs <= 0) {
+		(*queue)->back_index = 0;
+		(*queue)->front_index = 0;
+		(*queue)->event_count = 0;
+		SMOL_FREE((*queue)->events);
+		SMOL_FREE((*queue));
+	}
+	*queue = NULL;
 }
 
 int smol_event_queue_push_back(smol_event_queue_t* queue, const smol_frame_event_t* event) {
@@ -467,7 +498,7 @@ int smol_event_queue_push_back(smol_event_queue_t* queue, const smol_frame_event
 		return 0;
 
 	int index = queue->back_index++;
-	index = index % queue->event_count;
+	index = (queue->mid_point + index) % queue->event_count;
 	queue->events[index] = *event;
 
 	return 1;
@@ -479,7 +510,7 @@ int smol_event_queue_push_front(smol_event_queue_t* queue, const smol_frame_even
 		return 0;
 
 	int index = queue->front_index--;
-	index = (queue->event_count + index) % queue->event_count;
+	index = (queue->mid_point + index) % queue->event_count;
 	queue->events[index] = *event;
 
 	return 1;
@@ -495,7 +526,7 @@ int smol_event_queue_pop_front(smol_event_queue_t* queue, smol_frame_event_t* ev
 		return 0;
 
 	int index = queue->front_index++;
-	index = index % queue->event_count;
+	index =  (queue->mid_point + index) % queue->event_count;
 	*event = queue->events[index];
 
 	if(queue->front_index == queue->back_index) {
@@ -511,7 +542,7 @@ int smol_event_queue_pop_back(smol_event_queue_t* queue, smol_frame_event_t* eve
 		return 0;
 
 	int index = queue->back_index--;
-	index = (queue->event_count + index) % queue->event_count;
+	index = (queue->mid_point + index) % queue->event_count;
 	*event = queue->events[index];
 
 	if(queue->front_index == queue->back_index) {
@@ -531,12 +562,12 @@ smol_frame_t* smol_frame_create(int width, int height, const char* title) {
 
 int smol_frame_acquire_event(smol_frame_t* frame, smol_frame_event_t* event) {
 
-	int nEvents = smol_event_queue_count(&frame->event_queue);
+	int nEvents = smol_event_queue_count(frame->event_queue);
 
 	if(nEvents <= 0)
 		return 0;
 	
-	if(smol_event_queue_pop_front(&frame->event_queue, event))
+	if(smol_event_queue_pop_front(frame->event_queue, event))
 		return nEvents;
 	
 	return 0;
@@ -546,11 +577,23 @@ int smol_frame_is_closed(smol_frame_t* frame) {
 	return frame->should_close;
 }
 
+void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* evq) {
+	if(frame->event_queue) {
+		smol_event_queue_destroy(&frame->event_queue);
+	}
+	frame->event_queue = evq;
+	evq->refs++;
+}
+
+smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame) {
+	return frame->event_queue;
+}
+
 #pragma endregion 
 
 #pragma region Win32 Implementation
 #if defined(SMOL_PLATFORM_WINDOWS)
-WNDCLASSEXW wndClass;
+WNDCLASSEX wndClass;
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -568,17 +611,17 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		wndClass.cbSize = sizeof(wndClass);
 		wndClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
 		wndClass.lpfnWndProc = &smol_frame_handle_event;
-		wndClass.cbClsExtra = NULL;
-		wndClass.cbWndExtra = NULL;
+		wndClass.cbClsExtra = 0;
+		wndClass.cbWndExtra = 0;
 		wndClass.hInstance = GetModuleHandle(0);
 		wndClass.hIcon = LoadIcon(NULL, IDI_WINLOGO);
 		wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
 		wndClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
 		wndClass.lpszMenuName = NULL;
-		wndClass.lpszClassName = L"smol_frame";
+		wndClass.lpszClassName = TEXT("smol_frame");
 		wndClass.hIconSm = NULL;
 		
-		ATOM registerResult = RegisterClassExW(&wndClass);
+		ATOM registerResult = RegisterClassEx(&wndClass);
 		
 		SMOL_ASSERT("Window class initialization failed!" && registerResult);
 
@@ -591,7 +634,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	if(GetCursorPos(&point) == TRUE) {
 		HMONITOR monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
 		MONITORINFO monitorInfo = { sizeof(monitorInfo) };
-		if(GetMonitorInfoW(monitor, &monitorInfo) != FALSE) {
+		if(GetMonitorInfo(monitor, &monitorInfo) != FALSE) {
 			winRect.left = ((monitorInfo.rcMonitor.left + monitorInfo.rcMonitor.right) - width) >> 1;
 			winRect.top = ((monitorInfo.rcMonitor.top + monitorInfo.rcMonitor.bottom) - height) >> 1;
 			winRect.right = winRect.left + width;
@@ -610,13 +653,20 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	SMOL_ASSERT("Unable to allocate result!" && result);
 	memset(result, 0, sizeof(smol_frame_t));
 
-	wchar_t wide_title[256] = { 0 };
-	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 1024);
+	const TCHAR* title_text = NULL;
 
-	wnd = CreateWindowExW(
+#ifdef UNICODE
+	wchar_t wide_title[256] = { 0 };
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, (int)strlen(title), wide_title, 1024);
+	title_text = wide_title;
+#else 
+	title_text = title;
+#endif 
+
+	wnd = CreateWindowEx(
 		0, 
 		wndClass.lpszClassName, 
-		wide_title, 
+		title_text,
 		exStyle, 
 		winRect.left, 
 		winRect.top, 
@@ -648,9 +698,13 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 }
 
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
+#ifdef UNICODE
 	wchar_t wide_title[256] = { 0 };
-	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, strlen(title), wide_title, 256);	
-	SMOL_ASSERT("Failed to set window title!" && SetWindowTextW(frame->frame_handle_win32, wide_title));
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, (int)strlen(title), wide_title, 256);	
+	SMOL_ASSERT("Failed to set window title!" && SetWindowText(frame->frame_handle_win32, wide_title));
+#else 
+	SMOL_ASSERT("Failed to set window title!" && SetWindowText(frame->frame_handle_win32, title));
+#endif 
 }
 
 HWND smol_frame_get_win32_window_handle(smol_frame_t* frame) {
@@ -671,9 +725,9 @@ void smol_frame_destroy(smol_frame_t* frame) {
 void smol_frame_update(smol_frame_t* frame) {
 
 	MSG msg;
-	while(PeekMessageW(&msg, frame ? frame->frame_handle_win32 : NULL, 0, 0, PM_REMOVE)) {
+	while(PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 		TranslateMessage(&msg);
-		DispatchMessageW(&msg);
+		DispatchMessage(&msg);
 	}
 
 }
@@ -684,44 +738,41 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 
 	if(msg == WM_CREATE) {
 		CREATESTRUCT* createStruct = (CREATESTRUCT*)lParam;
-		SetWindowLongPtrW(wnd, GWLP_USERDATA, (LONG_PTR)createStruct->lpCreateParams);
+		SetWindowLongPtr(wnd, GWLP_USERDATA, (LONG_PTR)createStruct->lpCreateParams);
 		return 1;
 	}
 
-	smol_frame_t* frame = (smol_frame_t*)GetWindowLongPtrW(wnd, GWLP_USERDATA);
-	if(!frame) 
+	smol_frame_t* frame = (smol_frame_t*)GetWindowLongPtr(wnd, GWLP_USERDATA);
+
+	if(!frame || frame->frame_handle_win32 == NULL) 
 		goto def_proc;
-	if(frame->frame_handle_win32 == NULL) 
-		goto def_proc;
+
+	smol_frame_event_t event = { 0 };
+	event.frame = frame;
 
 	switch(msg) {
 		case WM_CLOSE: {
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_CLOSED;
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 			frame->should_close = 1;
 			return 1;
 		} break;
 		case WM_SIZE: {
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_RESIZE;
 			event.size.width = LOWORD(lParam);
 			event.size.height = HIWORD(lParam);
 			frame->width = LOWORD(lParam);
 			frame->height = HIWORD(lParam);
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 			return 1;
 		} break;
 		case WM_MOUSEMOVE: {
-
-			smol_frame_event_t event = { 0 };
-
 			event.type = SMOL_FRAME_EVENT_MOUSE_MOVE;
 			event.mouse.x = GET_X_LPARAM(lParam);
 			event.mouse.y = GET_Y_LPARAM(lParam);
 			event.mouse.dx = event.mouse.x - frame->old_mouse_x;
 			event.mouse.dy = event.mouse.y - frame->old_mouse_y;
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			frame->old_mouse_x = event.mouse.x;
 			frame->old_mouse_y = event.mouse.y;
@@ -733,9 +784,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 		case WM_MBUTTONDOWN:
 		case WM_XBUTTONDOWN:
 		{
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN;
-			
 			switch(msg) {
 				case WM_LBUTTONDOWN: event.mouse.button = 1; break;
 				case WM_RBUTTONDOWN: event.mouse.button = 2; break;
@@ -748,7 +797,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			event.mouse.dx = event.mouse.x - frame->old_mouse_x;
 			event.mouse.dy = event.mouse.y - frame->old_mouse_y;
 
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 			frame->old_mouse_x = event.mouse.x;
 			frame->old_mouse_y = event.mouse.y;
 
@@ -759,7 +808,6 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 		case WM_MBUTTONUP:
 		case WM_XBUTTONUP:
 		{
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_MOUSE_BUTTON_UP;
 			
 			switch(msg) {
@@ -771,7 +819,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 
 			event.mouse.x = GET_X_LPARAM(lParam);
 			event.mouse.y = GET_Y_LPARAM(lParam);
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 			
 			frame->old_mouse_x = event.mouse.x;
 			frame->old_mouse_y = event.mouse.y;
@@ -779,8 +827,6 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			return 1;
 		} break;
 		case WM_MOUSEWHEEL: {
-			smol_frame_event_t event = { 0 };
-
 			event.type = SMOL_FRAME_EVENT_MOUSE_VER_WHEEL;
 			event.mouse.x = GET_X_LPARAM(lParam);
 			event.mouse.y = GET_Y_LPARAM(lParam);
@@ -793,14 +839,13 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			frame->mouse_z_accum += event.mouse.dz;
 			event.mouse.z = frame->mouse_z_accum;
 
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			frame->old_mouse_x = event.mouse.x;
 			frame->old_mouse_y = event.mouse.y;
 			return 1;
 		} break;
 		case WM_MOUSEHWHEEL: {
-			smol_frame_event_t event = { 0 };
 
 			event.type = SMOL_FRAME_EVENT_MOUSE_HOR_WHEEL;
 			event.mouse.x = GET_X_LPARAM(lParam);
@@ -814,7 +859,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			frame->mouse_w_accum += event.mouse.dw;
 			event.mouse.w = frame->mouse_w_accum;
 
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			frame->old_mouse_x = event.mouse.x;
 			frame->old_mouse_y = event.mouse.y;
@@ -824,14 +869,12 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 		case WM_KEYDOWN:
 		case WM_KEYUP: {
 
-			WORD flags = HIWORD(wParam);
 			int released = (msg == WM_KEYUP);
 
-			smol_frame_event_t event = { 0 };
 			event.type = released ? SMOL_FRAME_EVENT_KEY_UP : SMOL_FRAME_EVENT_KEY_DOWN;
 			event.key.code = smol_frame_mapkey(wParam, lParam);
 
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			return 0;
 		} break;
@@ -844,31 +887,28 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 				frame->high_utf16_surrogate = (wParam & 0x3FF);
 				return 0;
 			} else if(surrogate == 0xDC00) {
-				chr = ((unsigned int)frame->high_utf16_surrogate  << 10) | ((unsigned int)(wParam) & 0x3FF);
+				chr = ((unsigned int)frame->high_utf16_surrogate << 10) | ((unsigned int)(wParam) & 0x3FF);
 				frame->high_utf16_surrogate = 0;
 			}
 			
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_TEXT_INPUT;
-			event.unicode = chr;
+			event.input.codepoint = chr;
 
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			return 0;
 		} break;
 		case WM_SETFOCUS: {
 
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_FOCUS_GAINED;
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			return 0;
 		} break;
 		case WM_KILLFOCUS: {
 
-			smol_frame_event_t event = { 0 };
 			event.type = SMOL_FRAME_EVENT_FOCUS_LOST;
-			smol_event_queue_push_back(&frame->event_queue, &event);
+			smol_event_queue_push_back(frame->event_queue, &event);
 
 			return 0;
 		} break;
@@ -1019,6 +1059,7 @@ int smol_frame_mapkey(int key);
 #	if defined(SMOL_FRAME_BACKEND_X11)
 
 Atom smol__wm_delete_window_atom;
+Atom smol__frame_handle_atom;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	XDestroyImage(renderer->image);
@@ -1081,8 +1122,8 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	XSetWindowAttributes setAttributes = { 0 };
 	XIM im;
 	XIC ic;
-    XIMStyles *styles;
-    XIMStyle requested_style;
+	XIMStyles *styles;
+	XIMStyle requested_style;
 	smol_frame_t* result = NULL;
 	Status status;
 
@@ -1142,9 +1183,27 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		smol__wm_delete_window_atom = XInternAtom(display, "WM_DELETE_WINDOW", False);
 	}
 
+	if(smol__frame_handle_atom == None) {
+		smol__frame_handle_atom = XInternAtom(display, "SMOL_FRAME_HANDLE", False);
+	}
+
 	status = XSetWMProtocols(display, result_window, &smol__wm_delete_window_atom, 1);
 
 	SMOL_ASSERT("Failed to set Window protocols!" && (status != 0));
+
+/*
+
+XChangeProperty(
+      Display *display,
+      Window w,
+      Atom property, type,
+      int format,
+      int mode,
+      unsigned char *data,
+      int nelements)
+
+*/
+
 
 	XStoreName(display, result_window, title);
 	XMapWindow(display, result_window);
@@ -1153,7 +1212,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	XGetIMValues(im, XNQueryInputStyle, &styles, NULL);
 	ic = XCreateIC(im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, result_window, NULL);
 
- 	XSetICFocus(ic);
+	XSetICFocus(ic);
 	XFlush(display);
 
 	result = SMOL_ALLOC_INSTANCE(smol_frame_t);
@@ -1165,6 +1224,9 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	result->height = height;
 	result->ic = ic;
 	result->im = im;
+
+	XChangeProperty(display, result_window, smol__frame_handle_atom, XA_STRING, 8, PropertyChangeMask, (const unsigned char*)&result, sizeof(smol_frame_t*));
+	XFlush(display);
 
 	if(!(flags & SMOL_FRAME_CONFIG_SUPPORT_OPENGL)) {
 		result->renderer = smol_renderer_create(result);
@@ -1201,38 +1263,60 @@ void smol_frame_update(smol_frame_t* frame) {
 	int button_indices[] = {0, 1, 3, 2, 4, 5};
 
 	XEvent xevent;
+	smol_frame_event_t event = { 0 };
+
 	while(XPending(frame->display_server_connection)) {
 		XNextEvent(frame->display_server_connection, &xevent);
+
+		Atom actual_type;
+		int actual_format;
+		unsigned long num_items;
+		unsigned long bytes_after;
+
+		smol_frame_t* frame_ptr;
+		//XGetWindowProperty(
+		//	frame->display_server_connection, 
+		//	xevent.xany.window, 
+		//	smol__frame_handle_atom, 
+		//	0, 
+		//	8, 
+		//	False, 
+		//	AnyPropertyType,  
+		//	&actual_type, 
+		//	&actual_format, 
+		//	&num_items, 
+		//	&bytes_after, 
+		//	(unsigned char**)&frame_ptr
+		//);
+
+		//SMOL_ASSERT(actual_type == XA_STRING && actual_format == 8);
+
 		XFilterEvent(&xevent, frame->frame_window);
 		switch(xevent.type) {
 			case Expose: {
-				XWindowAttributes attribs;
-				XGetWindowAttributes(frame->display_server_connection, frame->frame_window, &attribs);
 				//mWidth = attribs.width;
 				//mHeight = attribs.height;
-				smol_frame_event_t event = { 0 };
 				event.type = SMOL_FRAME_EVENT_RESIZE;
-				event.size.width = attribs.width;
-				event.size.height = attribs.height;
+				event.size.width = xevent.xexpose.width;
+				event.size.height = xevent.xexpose.height;
 
-				if(frame->width != attribs.width && frame->height != attribs.height) {
+				if(frame->width != xevent.xexpose.width && frame->height != xevent.xexpose.height) {
 					frame->renderer = smol_renderer_create(frame);
 				} 
 
-				frame->width = attribs.width;
-				frame->height = attribs.height;
+				frame->width = xevent.xexpose.width;
+				frame->height = xevent.xexpose.height;
 
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 
 			} break;
 			case ClientMessage: {
 				//if(xevent.xclient.type == smol__wm_protocols_atom) {
 					//puts("Should quit.");
 				if(xevent.xclient.data.l[0] == smol__wm_delete_window_atom) {
-					smol_frame_event_t event = { 0 };
 					event.type = SMOL_FRAME_EVENT_CLOSED;
 					frame->should_close = 1;
-					smol_event_queue_push_back(&frame->event_queue, &event);
+					smol_event_queue_push_back(frame->event_queue, &event);
 				}
 				//}
 				
@@ -1255,12 +1339,11 @@ void smol_frame_update(smol_frame_t* frame) {
 				if(!physical)
 					break;
 
-				smol_frame_event_t event = { 0 };
 				event.type = ((xevent.type == KeyRelease) && physical) ? SMOL_FRAME_EVENT_KEY_UP: SMOL_FRAME_EVENT_KEY_DOWN;
 
 				KeySym keysym = XLookupKeysym(&xevent.xkey, 0);
 				event.key.code = smol_frame_mapkey(keysym);
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 
 				if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
 					char buffer[6] = {0};
@@ -1290,27 +1373,25 @@ void smol_frame_update(smol_frame_t* frame) {
 
 					if(count) {
 						event.type = SMOL_FRAME_EVENT_TEXT_INPUT;
-						event.unicode = unicode;
-						smol_event_queue_push_back(&frame->event_queue, &event);
+						event.input.codepoint = unicode;
+						smol_event_queue_push_back(frame->event_queue, &event);
 					}
 				}
 
 			} 
 			break;
 			case MotionNotify: {
-				smol_frame_event_t event = { 0 };
 				event.type = SMOL_FRAME_EVENT_MOUSE_MOVE;
 				event.mouse.dx = xevent.xmotion.x - frame->old_mouse_x;
 				event.mouse.dy = xevent.xmotion.y - frame->old_mouse_y;
 
 				event.mouse.x = xevent.xmotion.x;
 				event.mouse.y = xevent.xmotion.y;
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 			case ButtonPress:
 			case ButtonRelease: 
 			{
-				smol_frame_event_t event = { 0 };
 				if(xevent.xbutton.button < 4) {
 					event.type = xevent.type == ButtonPress ? SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN : SMOL_FRAME_EVENT_MOUSE_BUTTON_UP;
 					event.mouse.button = button_indices[xevent.xbutton.button];
@@ -1321,7 +1402,7 @@ void smol_frame_update(smol_frame_t* frame) {
 					event.mouse.x = xevent.xmotion.x;
 					event.mouse.y = xevent.xmotion.y;
 
-					smol_event_queue_push_back(&frame->event_queue, &event);
+					smol_event_queue_push_back(frame->event_queue, &event);
 				} else {
 
 					if(xevent.type != ButtonPress)
@@ -1343,20 +1424,18 @@ void smol_frame_update(smol_frame_t* frame) {
 					event.mouse.w = frame->mouse_w_accum;
 					event.mouse.dw = wheel;
 
-					smol_event_queue_push_back(&frame->event_queue, &event);
+					smol_event_queue_push_back(frame->event_queue, &event);
 
 				}
 			} 
 			break;
 			case FocusIn: {
-				smol_frame_event_t event = { 0 };
 				event.type = SMOL_FRAME_EVENT_FOCUS_GAINED;
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 			case FocusOut: {
-				smol_frame_event_t event = { 0 };
 				event.type = SMOL_FRAME_EVENT_FOCUS_LOST;
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 		}
 	}
@@ -1670,6 +1749,7 @@ void smol_frame_update(smol_frame_t* frame) {
 	for(xcb_generic_event_t* xevent; (xevent = xcb_poll_for_event(frame->display_server_connection));) {
 
 		uint8_t response = xevent->response_type & 0x7F;
+		smol_frame_event_t event = { 0 };
 
 		switch(response) {
 			case XCB_EXPOSE: {
@@ -1681,11 +1761,10 @@ void smol_frame_update(smol_frame_t* frame) {
 					frame->width = ev->width;
 					frame->height = ev->height;
 
-					smol_frame_event_t event = {0};
 					event.type = SMOL_FRAME_EVENT_RESIZE;
 					event.size.width = ev->width;
 					event.size.height = ev->height;
-					smol_event_queue_push_back(&frame->event_queue, &event);
+					smol_event_queue_push_back(frame->event_queue, &event);
 				} 
 
 				xcb_flush(frame->display_server_connection);
@@ -1697,9 +1776,8 @@ void smol_frame_update(smol_frame_t* frame) {
 					
 					frame->should_close = 1;
 
-					smol_frame_event_t event = {0};
 					event.type = SMOL_FRAME_EVENT_CLOSED;
-					smol_event_queue_push_back(&frame->event_queue, &event);
+					smol_event_queue_push_back(frame->event_queue, &event);
 				}
 			} break;
 			case XCB_KEY_PRESS: 
@@ -1724,18 +1802,16 @@ void smol_frame_update(smol_frame_t* frame) {
 				if(!physical)
 					break;
 
-				smol_frame_event_t event = {0};
 				event.type = ((xevent->response_type & 0x7F) == XCB_KEY_PRESS && physical) ? SMOL_FRAME_EVENT_KEY_DOWN : SMOL_FRAME_EVENT_KEY_UP;
 				xcb_keysym_t keysym = xcb_key_symbols_get_keysym(smol__keysyms, ev->detail, 0);
 				event.key.code = smol_frame_mapkey(keysym);
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 
 				
 				if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
 					event.type = SMOL_FRAME_EVENT_TEXT_INPUT;
-					event.unicode = xkb_state_key_get_utf32(frame->kbstate, ev->detail);
-					event.unicode = (ev->state & XCB_MOD_MASK_SHIFT) ? toupper(event.unicode) : event.unicode;
-					smol_event_queue_push_back(&frame->event_queue, &event);
+					event.input.codepoint  = xkb_state_key_get_utf32(frame->kbstate, ev->detail);
+					smol_event_queue_push_back(frame->event_queue, &event);
 				}
 
 				
@@ -1754,13 +1830,12 @@ void smol_frame_update(smol_frame_t* frame) {
 				frame->old_mouse_x = ev->event_x;
 				frame->old_mouse_y = ev->event_y;
 
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 			case XCB_BUTTON_PRESS: 
 			case XCB_BUTTON_RELEASE:
 			{
 				xcb_button_press_event_t* ev = (xcb_button_press_event_t*)xevent;
-				smol_frame_event_t event = {0};
 
 				if(ev->detail < XCB_BUTTON_INDEX_4) {
 					event.type = xevent->response_type == XCB_BUTTON_PRESS ? SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN : SMOL_FRAME_EVENT_MOUSE_BUTTON_UP;
@@ -1791,18 +1866,16 @@ void smol_frame_update(smol_frame_t* frame) {
 				}
 
 
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 
 			} break;
 			case XCB_FOCUS_IN: {
-				smol_frame_event_t event = {0};
 				event.type = SMOL_FRAME_EVENT_FOCUS_GAINED;
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 			case XCB_FOCUS_OUT: {
-				smol_frame_event_t event = {0};
 				event.type = SMOL_FRAME_EVENT_FOCUS_LOST;
-				smol_event_queue_push_back(&frame->event_queue, &event);
+				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 		}
 		free(xevent);
