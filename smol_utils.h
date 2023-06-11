@@ -45,6 +45,10 @@ distribution.
 //             Windows, and high precision time since Unix epoch on Linux. 
 double smol_timer(); 
 
+int smol_utf8_to_utf32(const char* utf8, unsigned int* utf32);
+
+int smol_utf32_to_utf8(unsigned int utf32, int buf_len, char* utf8);
+
 #endif 
 
 #ifdef SMOL_UTILS_IMPLEMENTATION
@@ -59,24 +63,32 @@ double smol_timer();
 #	endif
 #endif 
 
+#ifndef SMOL_SYMBOLIFY
+#define SMOL_SYMBOLIFY(x) #x
+#endif 
+
+#ifndef SMOL_STRINGIFY
+#define SMOL_STRINGIFY( x ) SMOL_SYMBOLIFY(x)
+#endif
+
 #ifndef SMOL_ASSERT
 #define SMOL_ASSERT(condition) \
 	if(!(condition)) \
-		printf(\
+		puts(\
 			"SMOL FRAME ASSERTION FAILED!\n" \
-			#condition "\n" \
-			"IN FILE '" __FILE__ "'\n" \
-			"ON LINE %d", __LINE__ \
+			"CONDITION: " #condition "\n" \
+			"IN FILE: '" __FILE__ "'\n" \
+			"ON LINE: " SMOL_STRINGIFY(__LINE__) "\n" \
 		), \
 		SMOL_BREAKPOINT()
-#endif 
+#endif
 
 #if defined(SMOL_PLATFORM_WINDOWS)
 
 //A nasty global :|
 double smol__perf_freq;
 
-double smol_timer() {
+double smol_timer(void) {
 
 	if(smol__perf_freq == 0.0) {
 		LARGE_INTEGER freq;
@@ -98,12 +110,90 @@ double smol_timer() {
 
 #elif defined(SMOL_PLATFORM_LINUX)
 
-double smol_timer() {
+double smol_timer(void) {
 	struct timeval tval;
 	gettimeofday(&tval, NULL);
 	return (double)tval.tv_sec + (double)tval.tv_usec * 1e-6; 
 }
 
 #endif 
+
+int smol_utf8_to_utf32(const char* utf8, unsigned int* utf32) {
+
+	int clen = 0;
+	if((utf8[0] & 0x80) == 0x00) clen = 1;
+	if((utf8[0] & 0xC0) == 0xC0) clen = 2;
+	if((utf8[0] & 0xE0) == 0xE0) clen = 3;
+	if((utf8[0] & 0xF0) == 0xF0) clen = 4;
+	if((utf8[0] & 0xF8) == 0xF8) clen = 5;
+	if((utf8[0] & 0xFC) == 0xFC) clen = 6;
+
+	switch(clen) {
+		case 1: *utf32 = (utf8[0] & 0x7F); break;
+		case 2: *utf32 = (utf8[0] & 0x1F) << 0x06 | (utf8[1] & 0x3F); break;
+		case 3: *utf32 = (utf8[0] & 0x0F) << 0x0C | (utf8[1] & 0x3F) << 0x06 | (utf8[2] & 0x3F); break;
+		case 4: *utf32 = (utf8[0] & 0x07) << 0x12 | (utf8[1] & 0x3F) << 0x0C | (utf8[2] & 0x3F) << 0x06 | (utf8[3] & 0x3F); break;
+		case 5: *utf32 = (utf8[0] & 0x03) << 0x18 | (utf8[1] & 0x3F) << 0x12 | (utf8[2] & 0x3F) << 0x0C | (utf8[3] & 0x3F) << 0x06 | (utf8[4] & 0x3F); break;
+		case 6: *utf32 = (utf8[0] & 0x01) << 0x1E | (utf8[1] & 0x3F) << 0x18 | (utf8[2] & 0x3F) << 0x12 | (utf8[3] & 0x3F) << 0x12 | (utf8[4] & 0x3F) << 0x06 | (utf8[5] & 0x3F); break;
+	}
+
+	return clen;
+
+}
+
+int smol_utf32_to_utf8(unsigned int utf32, int buf_len, char* utf8) {
+
+	int clen = 1;
+	if(utf32 >= 0x0000080) clen = 2;
+	if(utf32 >= 0x0000800) clen = 3;
+	if(utf32 >= 0x0010000) clen = 4;
+	if(utf32 >= 0x010F800) clen = 5;
+	if(utf32 >= 0x3FFFFFF) clen = 6;
+
+	if(clen > buf_len) return 0;
+
+	char* buf_byte = utf8;
+
+	switch(clen) {
+		case 0:
+		break;
+		case 1:
+			*buf_byte++ = 0x00 | ((utf32 >> 0x00) & 0xFF);
+		break;
+		case 2:
+			*buf_byte++ = 0xC0 | ((utf32 >> 0x06) & 0x1F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x00) & 0x3F);
+		break;
+		case 3:
+			*buf_byte++ = 0xE0 | ((utf32 >> 0x0C) & 0x0F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x06) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x00) & 0x3F);
+		break;
+		case 4:
+			*buf_byte++ = 0xF0 | ((utf32 >> 0x12) & 0x07);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x0C) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x06) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x00) & 0x3F);
+		break;
+		case 5:
+			*buf_byte++ = 0xF8 | ((utf32 >> 0x18) & 0x03);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x12) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x0C) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x06) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x00) & 0x3F);
+		break;
+		case 6:
+			*buf_byte++ = 0xFC | ((utf32 >> 0x1F) & 0x01);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x18) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x12) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x0C) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x06) & 0x3F);
+			*buf_byte++ = 0x80 | ((utf32 >> 0x00) & 0x3F);
+		break;
+	}
+
+	return clen;
+
+}
 
 #endif 
