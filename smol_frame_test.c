@@ -36,6 +36,9 @@ int utf32_to_utf8(unsigned int chr, int bufLen, char* buf);
 
 int main(int numArgs, const char* argv[]) {
 	
+	(void)numArgs;
+	(void)argv;
+
 #ifdef SMOL_PLATFORM_WINDOWS
 	SetConsoleOutputCP(CP_UTF8);
 #endif 
@@ -55,7 +58,7 @@ int main(int numArgs, const char* argv[]) {
 
 	int fps = 0, frameCounter = 0;
 	double timeAccum = 0.;
-	double tp1, dt;
+	double tp1, dt = 0.;
 
 	float red = 0.f;
 	float blue = 0.f;
@@ -83,8 +86,11 @@ int main(int numArgs, const char* argv[]) {
 				printf("Frame resolution size is now: (%d x %d)\n", event.size.width, event.size.height);
 				break;
 			} else if(event.type == SMOL_FRAME_EVENT_TEXT_INPUT) {
-				if(event.unicode < 127 && isprint(event.unicode)) 
-					input_buffer[input_cursor++] = (char)event.unicode;
+				if(event.input.codepoint < 127 && isprint(event.input.codepoint)) 
+					input_buffer[input_cursor++] = (char)event.input.codepoint;
+				char utf8[8] = { 0 };
+				if(utf32_to_utf8(event.input.codepoint, 8, utf8)) 
+					printf("TYPED: %s\n", utf8);
 			} else if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
 				if(event.key.code == SMOLK_BACKSPACE && input_cursor > 0) {
 					input_buffer[--input_cursor] = 0;
