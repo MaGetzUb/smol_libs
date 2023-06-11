@@ -30,7 +30,7 @@ distribution.
 #endif 
 
 //smol_inputs_flush - Clears all the key state changes, and preservers key pressed states
-void smol_inputs_flush();
+void smol_inputs_flush(void);
 
 //smol_inputs_update - Updates the internal inputs state by filtering events
 //Arguments:
@@ -82,37 +82,37 @@ int smol_mouse_down(int button);
 
 //smol_mouse_x - Get the mouse x position in active frame space.
 //Returns: int -- containing mouse coordinate on x - axis.
-int smol_mouse_x();
+int smol_mouse_x(void);
 
 //smol_mouse_y - Get the mouse x position in active frame space.
 //Returns: int -- containing mouse coordinate on y - axis.
-int smol_mouse_y();
+int smol_mouse_y(void);
 
 //smol_mouse_z - Get the accumulated mouse vertical wheel orientation in active frame.
 //Returns: int -- containing mouse vertical wheel orientation.
-int smol_mouse_z();
+int smol_mouse_z(void);
 
 //smol_mouse_w - Get the accumulated mouse horizontal wheel orientation in active frame.
 //Returns: int -- containing mouse horizontal wheel orientation.
-int smol_mouse_w();
+int smol_mouse_w(void);
 
 
 
 //smol_mouse_move_x - Get the delta of mouse coordinate difference on y-axis.
 //Returns: int -- containing mouse coordinate difference on x-axis.
-int smol_mouse_move_x();
+int smol_mouse_move_x(void);
 
 //smol_mouse_move_y - Get the delta of mouse coordinate difference on y-axis.
 //Returns: int -- containing mouse coordinate difference on y-axis.
-int smol_mouse_move_y();
+int smol_mouse_move_y(void);
 
 //smol_mouse_move_z - Get the delta of mouse vertical wheel orientation in active frame.
 //Returns: int -- containing mouse vertical wheel orientation delta.
-int smol_mouse_move_z();
+int smol_mouse_move_z(void);
 
 //smol_mouse_move_w - Get the delta of mouse horizontal wheel orientation in active frame.
 //Returns: int -- containing mouse horizontal wheel orientation delta.
-int smol_mouse_move_w();
+int smol_mouse_move_w(void);
 
 #endif 
 
