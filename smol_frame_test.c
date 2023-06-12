@@ -31,8 +31,6 @@ typedef unsigned int Uint32;
 
 Uint32 surface[800 * 600];
 
-int utf32_to_utf8(unsigned int chr, int bufLen, char* buf);
-
 
 int main(int numArgs, const char* argv[]) {
 	
@@ -89,7 +87,7 @@ int main(int numArgs, const char* argv[]) {
 				if(event.input.codepoint < 127 && isprint(event.input.codepoint)) 
 					input_buffer[input_cursor++] = (char)event.input.codepoint;
 				char utf8[8] = { 0 };
-				if(utf32_to_utf8(event.input.codepoint, 8, utf8)) 
+				if(smol_utf32_to_utf8(event.input.codepoint, 8, utf8)) 
 					printf("TYPED: %s\n", utf8);
 			} else if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
 				if(event.key.code == SMOLK_BACKSPACE && input_cursor > 0) {
@@ -192,58 +190,3 @@ int main(int numArgs, const char* argv[]) {
 	return 0;
 }
 
-
-int utf32_to_utf8(unsigned int chr, int buf_len, char* buf) {
-
-	int clen = 1;
-	if(chr >= 0x0000080) clen = 2;
-	if(chr >= 0x0000800) clen = 3;
-	if(chr >= 0x0010000) clen = 4;
-	if(chr >= 0x010F800) clen = 5;
-	if(chr >= 0x3FFFFFF) clen = 6;
-
-	if(clen > buf_len) return 0;
-
-	char* buf_byte = buf;
-
-	switch(clen) {
-		case 0:
-		break;
-		case 1:
-			*buf_byte++ = chr & 0xFF;
-		break;
-		case 2:
-			*buf_byte++ = 0xC0 | ((chr >> 6) & 0x1F);
-			*buf_byte++ = 0x80 | (chr & 0x3F);
-		break;
-		case 3:
-			*buf_byte++ = 0xE0 | ((chr >> 12) & 0xF);
-			*buf_byte++ = 0x80 | ((chr >> 6) & 0x3F);
-			*buf_byte++ = 0x80 | (chr & 0x3F);
-		break;
-		case 4:
-			*buf_byte++ = 0xF0 | ((chr >> 18) & 0x7);
-			*buf_byte++ = 0x80 | ((chr >> 12) & 0x3F);
-			*buf_byte++ = 0x80 | ((chr >> 6) & 0x3F);
-			*buf_byte++ = 0x80 | (chr & 0x3F);
-		break;
-		case 5:
-			*buf_byte++ = 0xF8 | ((chr >> 24) & 0x3);
-			*buf_byte++ = 0x80 | ((chr >> 18) & 0x3F);
-			*buf_byte++ = 0x80 | ((chr >> 12) & 0x3F);
-			*buf_byte++ = 0x80 | ((chr >>  6) & 0x3F);
-			*buf_byte++ = 0x80 | (chr & 0x3F);
-		break;
-		case 6:
-			*buf_byte++ = 0xFC | ((chr >> 31) &  0x1);
-			*buf_byte++ = 0x80 | ((chr >> 24) & 0x3F);
-			*buf_byte++ = 0x80 | ((chr >> 18) & 0x3F);
-			*buf_byte++ = 0x80 | ((chr >> 12) & 0x3F);
-			*buf_byte++ = 0x80 | ((chr >>  6) & 0x3F);
-			*buf_byte++ = 0x80 | (chr & 0x3F);
-		break;
-	}
-
-	return clen;
-
-}
