@@ -84,7 +84,13 @@ Contributions:
 #	include <Windows.h>
 #	include <windowsx.h>
 #	include <wingdi.h>
-#	pragma comment(lib, "gdi32.lib")
+#	ifdef _MSC_VER
+#		pragma comment(lib, "kernel32.lib")
+#		pragma comment(lib, "user32.lib")
+#		pragma comment(lib, "ole32.lib")
+#		pragma comment(lib, "gdi32.lib")
+#		pragma comment(lib, "shell32.lib")
+#	endif 
 #elif defined(__linux__) 
 #	ifndef SMOL_PLATFORM_LINUX
 #	define SMOL_PLATFORM_LINUX
@@ -384,7 +390,7 @@ typedef enum {
 #endif 
 
 #ifndef SMOL_STRINGIFY
-#define SMOL_STRINGIFY( x ) SMOL_SYMBOLIFY(x)
+#define SMOL_STRINGIFY(x) SMOL_SYMBOLIFY(x)
 #endif 
 
 #ifndef SMOL_ASSERT
