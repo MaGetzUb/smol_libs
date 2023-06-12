@@ -1,5 +1,5 @@
 /*
-Copyright © 2023 Marko Ranta (Discord: Coderunner#2271)
+Copyright ï¿½ 2023 Marko Ranta (Discord: Coderunner#2271)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -137,7 +137,7 @@ int smol__mouse_move_z;
 int smol__mouse_move_w;
 
 
-void smol_inputs_flush() {
+void smol_inputs_flush(void) {
 
 	smol__mouse_move_x = 0;
 	smol__mouse_move_y = 0;
@@ -218,36 +218,36 @@ int smol_mouse_down(int button) {
 	return smol__mouse_button_states[button] & SMOL_INPUT_STATE_DOWN;
 }
 
-int smol_mouse_x() {
+int smol_mouse_x(void) {
 	return smol__mouse_x;
 }
 
-int smol_mouse_y() {
+int smol_mouse_y(void) {
 	return smol__mouse_y;
 }
 
-int smol_mouse_z() {
+int smol_mouse_z(void) {
 	return smol__mouse_z;
 }
 
-int smol_mouse_w() {
+int smol_mouse_w(void) {
 	return smol__mouse_w;
 }
 
-int smol_mouse_move_x() {
+int smol_mouse_move_x(void) {
 	return smol__mouse_move_x;
 }
 
-int smol_mouse_move_y() {
+int smol_mouse_move_y(void) {
 	return smol__mouse_move_y;
 }
 
-int smol_mouse_move_z() {
+int smol_mouse_move_z(void) {
 	
 	return smol__mouse_move_z;
 }
 
-int smol_mouse_move_w() {
+int smol_mouse_move_w(void) {
 	return smol__mouse_move_w;
 }
 
