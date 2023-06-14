@@ -295,7 +295,7 @@ int smol_utf16_to_utf8(const unsigned short* utf16, int buf_len, char* utf8) {
 int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16) {
 
 	unsigned int utf32 = 0;
-	if(smol_utf8_to_utf32(utf8, buf_len, &utf32))
+	if(smol_utf8_to_utf32(utf8, &utf32))
 		return 0;
 
 	return smol_utf32_to_utf16(utf32, buf_len, utf16);
