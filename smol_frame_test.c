@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <malloc.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -63,6 +64,9 @@ int main(int numArgs, const char* argv[]) {
 
 	char buf[256] = {0};
 
+	double blink_timer = 0.4;
+	bool is_blinking = true;
+
 	printf("%lf\n", smol_timer());
 	char input_buffer[256] = {0};
 	int input_cursor = 0;
@@ -84,19 +88,48 @@ int main(int numArgs, const char* argv[]) {
 				printf("Frame resolution size is now: (%d x %d)\n", event.size.width, event.size.height);
 				break;
 			} else if(event.type == SMOL_FRAME_EVENT_TEXT_INPUT) {
-				if(event.input.codepoint < 127 && isprint(event.input.codepoint)) 
+				int l = strlen(input_buffer);
+
+
+				if(event.input.codepoint < 127 && isprint(event.input.codepoint)) {
+					if(input_cursor < l) {
+						for(int i = l; i >= input_cursor; i--) {
+							input_buffer[i+1] = input_buffer[i];
+						}
+					}
 					input_buffer[input_cursor++] = (char)event.input.codepoint;
+				}
 				char utf8[8] = { 0 };
 				if(smol_utf32_to_utf8(event.input.codepoint, 8, utf8)) 
-					printf("TYPED: %s\n", utf8);
+					printf("TYPED: %s       \r", utf8);
+					blink_timer = 0.4;
+					is_blinking = 1;
 			} else if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
+				
+				if(event.key.code == SMOLK_LEFT) input_cursor--, blink_timer = 0.4, is_blinking = 1;
+				if(event.key.code == SMOLK_RIGHT) input_cursor++, blink_timer = 0.4, is_blinking = 1;
+
+				int l = strlen(input_buffer);
+
 				if(event.key.code == SMOLK_BACKSPACE && input_cursor > 0) {
-					input_buffer[--input_cursor] = 0;
+					if(input_cursor == l)
+						input_buffer[--input_cursor] = 0;
+					else {
+						
+						for(int i = input_cursor; i <= l; i++) {
+							input_buffer[i-1] = input_buffer[i];
+						}
+						input_cursor--;
+					}
+
+					blink_timer = 0.4;
+					is_blinking = 1;
 				}
+				if(input_cursor < 0) input_cursor = 0;
+				if(input_cursor > l) input_cursor = l;
 			}
-			else {
-				smol_inputs_update(&event);
-			}
+
+			smol_inputs_update(&event);
 
 			/*else if(event.type == SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN) {
 				printf("Mouse button (%d) down event at (%d, %d)\n", event.mouse.button, event.mouse.x, event.mouse.y);
@@ -158,6 +191,15 @@ int main(int numArgs, const char* argv[]) {
 		snprintf(buf, 256, "Input: %s", input_buffer);
 		olivec_text(canvas, buf, 10, 200, smol_font, 1, 0xFF00FFCC);
 
+		if(is_blinking) {
+			olivec_text(canvas, "_", 10+(strlen("Input: ")+input_cursor) * smol_font.width, 200, smol_font, 1, 0xFF00FFCC);
+		}
+		
+		blink_timer -= dt;
+		if(blink_timer < 0.0) {
+			is_blinking = !is_blinking;
+			blink_timer = 0.4;
+		}
 
 		olivec_text(canvas, "!\"#$%&'()*+,-./0123456789:;<=>?@", 10, 25, smol_font, 1, 0xFFAA00DD);
 		olivec_text(canvas, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 10, 45, smol_font, 1, 0xFFAA00DD);
