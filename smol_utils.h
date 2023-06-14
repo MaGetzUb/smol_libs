@@ -43,11 +43,55 @@ distribution.
 
 //smol_timer - Returns high precision system up time in seconds on
 //             Windows, and high precision time since Unix epoch on Linux. 
+//Returns: double - containing seconds.microseconds since the last start 
+//                  of the computer (win32) or since unix epoch (on linux) 
 double smol_timer(); 
 
+//smol_utf8_to_utf32 - Converts utf8 encoded character into utf32 codepoint
+//Arguments:
+// - const char* utf8     -- utf8 encoded bytes
+// - unsigned int* utf32  -- the codepoint 
+//Returns: int            -- number of utf8 bytes handled
 int smol_utf8_to_utf32(const char* utf8, unsigned int* utf32);
 
+//smol_utf32_to_utf8 - Converts utf32 codepoint into utf8 encoded character 
+//Arguments:
+// - unsigned int utf32   -- utf32 codepoint
+// - int buf_len          -- the number of bytes available in the result buffer
+// - char* utf8           -- the buffer where the result is stored
+//Returns: int            -- number of utf8 bytes written
 int smol_utf32_to_utf8(unsigned int utf32, int buf_len, char* utf8);
+
+//smol_utf16_to_utf32 - Converts utf8 encoded character into utf32 codepoint
+//Arguments:
+// - const unsigned short* utf8     -- utf16 encoded bytes
+// - unsigned int* utf32            -- the codepoint 
+//Returns: int                      -- number of utf16 symbols handled
+int smol_utf16_to_utf32(const unsigned short* utf16, unsigned int* utf32);
+
+//smol_utf32_to_utf16 - Converts utf32 codepoint into utf16 encoded character 
+//Arguments:
+// - unsigned int utf32             -- utf32 codepoint
+// - int buf_len                    -- the number of ushorts available in the result buffer
+// - unsigned short* utf16          -- the buffer where the result is stored
+//Returns: int                       -- number of utf16 symbols written
+int smol_utf32_to_utf16(unsigned int utf32, int buf_len, unsigned short* utf16);
+
+//smol_utf16_to_utf8 - Converts utf16 encoded character into utf8 encoded character
+//Arguments:
+// - const unsigned short* utf16    -- utf16 encoded bytes
+// - int buf_len                    -- the number of bytes available in the result buffer
+// - char* utf8                     -- the buffer where the result is stored
+//Returns: int                      -- number of utf8 bytes written
+int smol_utf16_to_utf8(const unsigned short* utf16, int buf_len, char* utf8);
+
+//smol_utf8_to_utf16 - Converts utf8 encoded character into utf16 encoded character 
+//Arguments:
+// - const char* utf8               -- utf8 character
+// - int buf_len                    -- the number of ushorts available in the result buffer
+// - unsigned short* utf16          -- the buffer where the result is stored
+//Returns: int                      -- number of utf16 symbols written
+int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16);
 
 #endif 
 
@@ -118,6 +162,7 @@ double smol_timer(void) {
 
 #endif 
 
+//https://en.wikipedia.org/wiki/UTF-8#Encoding
 int smol_utf8_to_utf32(const char* utf8, unsigned int* utf32) {
 
 	int clen = 0;
@@ -193,6 +238,67 @@ int smol_utf32_to_utf8(unsigned int utf32, int buf_len, char* utf8) {
 	}
 
 	return clen;
+
+}
+
+//https://en.wikipedia.org/wiki/UTF-16#Examples
+int smol_utf16_to_utf32(const unsigned short* utf16, unsigned int* utf32) {
+
+	utf32[0] = 0;
+
+	if(utf16[0] >= 0xD800) {
+
+		utf32[0] |= (unsigned int)(utf16[0] - 0xD800) << 0xA;
+		utf32[0] |= (unsigned int)(utf16[1] - 0xDC00) << 0x0;
+
+		utf32[0] += 0x10000;
+
+		return 2;
+	} else {
+		utf32[0] = (unsigned int)utf16[0];
+		return 1;
+	}
+
+	return 0;
+}
+
+int smol_utf32_to_utf16(unsigned int utf32, int buf_len, unsigned short* utf16) {
+
+
+	if(utf32 > 0x10000) {
+		
+		if(2 > buf_len) return 0;
+
+		utf32 -=  0x10000;
+		utf16[0] = (unsigned short)(utf32 >> 0x0A) + 0xD800;
+		utf16[1] = (unsigned short)(utf32 & 0x3FF) + 0xDC00;
+		
+		return 2;
+	} else {
+		utf16[0] = (unsigned short)utf32;
+		return 1;  
+	}
+
+	return 0;
+}
+
+int smol_utf16_to_utf8(const unsigned short* utf16, int buf_len, char* utf8) {
+
+	unsigned int utf32 = 0;
+	if(smol_utf16_to_utf32(utf16, &utf32) == 0)
+		return 0;
+	
+	return smol_utf32_to_utf8(utf32, buf_len, utf8);
+
+}
+
+int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16) {
+
+	unsigned int utf32 = 0;
+	if(smol_utf8_to_utf32(utf8, buf_len, &utf32))
+		return 0;
+
+	return smol_utf32_to_utf16(utf32, buf_len, utf16);
 
 }
 
