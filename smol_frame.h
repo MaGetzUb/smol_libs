@@ -95,6 +95,8 @@ Contributions:
 #	ifndef SMOL_PLATFORM_LINUX
 #	define SMOL_PLATFORM_LINUX
 #	endif 
+#	include <unistd.h>
+#	include <dlfcn.h>
 #	if defined(SMOL_FRAME_BACKEND_XCB)
 #		include <xcb/xcb.h>
 #		include <xcb/xcb_icccm.h>
@@ -116,6 +118,9 @@ Contributions:
 #		include <X11/XKBlib.h>
 #		include <X11/Xutil.h>
 #		include <X11/Xatom.h>
+#	endif 
+#	ifndef __gl_h
+typedef struct __GLXcontextRec *GLXContext;
 #	endif 
 #elif defined(__APPLE__)
 #	ifndef SMOL_PLATFORM_MAX_OS
@@ -670,8 +675,8 @@ typedef BOOL wgl_make_current_proc_t(HDC, HGLRC);
 typedef PROC wgl_get_proc_address_proc_t(LPCSTR);
 
 typedef HGLRC wgl_create_context_attribs_arb_proc_t(HDC hDC, HGLRC hshareContext, const int *attribList);
-typedef BOOL wgl_choose_pixel_format_arb_proc_t(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
 
+typedef BOOL wgl_choose_pixel_format_arb_proc_t(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
 typedef BOOL wgl_get_pixel_format_attribiv_arb_proc_t(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
 typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);
 
@@ -701,9 +706,9 @@ typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat,
 
 //https://registry.khronos.org/OpenGL/extensions/ARB/WGL_ARB_pixel_format.txt
 //Accepted in the <piAttributes> parameter array of
-//wgl_get_pixel_format_attribiv_arb, and wgl_get_pixel_format_attribfv_arb, and
+//wglGetPixelFormatAttribivARB, and wglGetPixelFormatAttribfvARB, and
 //as a type in the <piAttribIList> and <pfAttribFList> parameter
-//arrays of wgl_choose_pixel_format_arb:
+//arrays of wglChoosePixelFormatARB
 #define WGL_NUMBER_PIXEL_FORMATS_ARB            0x2000
 #define WGL_DRAW_TO_WINDOW_ARB                  0x2001
 #define WGL_DRAW_TO_BITMAP_ARB                  0x2002
@@ -746,10 +751,10 @@ typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat,
 #define WGL_STENCIL_BITS_ARB                    0x2023
 #define WGL_AUX_BUFFERS_ARB                     0x2024
 
-// Accepted as a value in the <piAttribIList> and <pfAttribFList>
-// parameter arrays of wgl_choose_pixel_format_arb, and returned in the
-// <piValues> parameter array of wgl_get_pixel_format_attribiv_arb, and the
-// <pfValues> parameter array of wgl_get_pixel_format_attribfv_arb:
+//Accepted as a value in the <piAttribIList> and <pfAttribFList>
+//parameter arrays of wglChoosePixelFormatARB, and returned in the
+//<piValues> parameter array of wglGetPixelFormatAttribivARB, and the
+//<pfValues> parameter array of wglGetPixelFormatAttribfvARB:
 #define WGL_NO_ACCELERATION_ARB                 0x2025
 #define WGL_GENERIC_ACCELERATION_ARB            0x2026
 #define WGL_FULL_ACCELERATION_ARB               0x2027
@@ -950,63 +955,55 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 
 		if(has_gl_arb_functionality) {
 
-			int formats[128];
+			int formats[64];
 			UINT numFormats;
 			PIXELFORMATDESCRIPTOR pfd = { 0 };
 
 			int pixelformat_atribs[64] = {
 				WGL_DRAW_TO_WINDOW_ARB, 1,
 				WGL_SUPPORT_OPENGL_ARB, 1,
+				WGL_DRAW_TO_WINDOW_ARB, 1,
 				WGL_DOUBLE_BUFFER_ARB,  1,
 				WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
 				WGL_COLOR_BITS_ARB,     gl_spec->color_bits,
 				WGL_ALPHA_BITS_ARB,		gl_spec->alpha_bits,
 				WGL_DEPTH_BITS_ARB,     gl_spec->depth_bits,
-				WGL_STENCIL_BITS_ARB,   8,
+				WGL_STENCIL_BITS_ARB,   gl_spec->stencil_bits,
+				WGL_SAMPLE_BUFFERS_ARB, gl_spec->has_multi_sampling
 			};
-
-			if(gl_spec->has_multi_sampling) {
-				pixelformat_atribs[16] = WGL_SAMPLE_BUFFERS_ARB;
-				pixelformat_atribs[17] = gl_spec->has_multi_sampling;
-				pixelformat_atribs[18] = WGL_SAMPLES_ARB;
-				pixelformat_atribs[19] = gl_spec->num_multi_samples;
-			}
+			
 
 			//wglChoosePixelFormat(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
-			BOOL res = wgl_choose_pixel_format_arb(dc, pixelformat_atribs, NULL, 128, formats, &numFormats);
+			BOOL res = wgl_choose_pixel_format_arb(dc, pixelformat_atribs, NULL, 64, formats, &numFormats);
 
 			UINT selected = 0;
-			if(res && numFormats) {
+			int samples_diff = 999;
+			int selected_samples = 0;
+			if(res && numFormats && gl_spec->has_multi_sampling) {
 				for(UINT i = 0; i < numFormats; i++) {
 					int ids[] = {
-						WGL_COLOR_BITS_ARB,
-						WGL_RED_BITS_ARB,
-						WGL_RED_BITS_ARB,
-						WGL_BLUE_BITS_ARB,
-						WGL_ALPHA_BITS_ARB,
-						WGL_DEPTH_BITS_ARB,
-						WGL_STENCIL_BITS_ARB,
 						WGL_SAMPLE_BUFFERS_ARB,
 						WGL_SAMPLES_ARB,
 					};
-					int values[9] = {0};
-					if(wgl_get_pixel_format_attribiv_arb(dc, formats[i], 0, 7, ids, values)) {
+					int values[2] = {0};
+					BOOL has_feature = wgl_get_pixel_format_attribiv_arb(dc, formats[i], 0, 7, ids, values);
+					
+					int diff = values[1] - gl_spec->num_multi_samples;
+					if(diff < 0) diff = -diff;
 
-						//printf("Format #%d: Color bits: %d, R: %dbits, G: %dbits, B: %dbits, A: %dbits, Depth: %dbits, Stencil: %dbits, Sample buffers: %d, Multi samples: %d\n",
-						//	i,
-						//	values[0],
-						//	values[1],
-						//	values[2],
-						//	values[3],
-						//	values[4],
-						//	values[5],
-						//	values[6],
-						//	values[7],
-						//	values[8]
-						//);
+					if(values[0]) {
+						if(diff < samples_diff) {
+			
+							pixelformat_atribs[16] = WGL_SAMPLE_BUFFERS_ARB;
+							pixelformat_atribs[17] = gl_spec->has_multi_sampling;
+							pixelformat_atribs[18] = WGL_SAMPLES_ARB;
+							pixelformat_atribs[19] = values[1];
 
-						//printf("%d\n", GetLastError());
+							samples_diff = diff;
+							selected = i;
+						}
 					}
+					
 				}
 			}
 
@@ -1406,12 +1403,228 @@ void smol_frame_blit_pixels(
 #pragma region Linux/X11 Implementation
 #if defined(SMOL_PLATFORM_LINUX)
 
+
 int smol_frame_mapkey(int key);
 
 #	if defined(SMOL_FRAME_BACKEND_X11)
 
 Atom smol__wm_delete_window_atom;
 Atom smol__frame_handle_atom;
+
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+#ifndef APIENTRYP
+#define APIENTRYP APIENTRY *
+#endif
+
+#ifndef GLX_VERSION_1_0
+#define GLX_VERSION_1_0 1
+typedef struct __GLXcontextRec *GLXContext;
+typedef XID GLXDrawable;
+typedef XID GLXPixmap;
+#define GLX_EXTENSION_NAME "GLX"
+#define GLX_PbufferClobber 0
+#define GLX_BufferSwapComplete 1
+#define __GLX_NUMBER_EVENTS 17
+#define GLX_BAD_SCREEN 1
+#define GLX_BAD_ATTRIBUTE 2
+#define GLX_NO_EXTENSION 3
+#define GLX_BAD_VISUAL 4
+#define GLX_BAD_CONTEXT 5
+#define GLX_BAD_VALUE 6
+#define GLX_BAD_ENUM 7
+#define GLX_USE_GL 1
+#define GLX_BUFFER_SIZE 2
+#define GLX_LEVEL 3
+#define GLX_RGBA 4
+#define GLX_DOUBLEBUFFER 5
+#define GLX_STEREO 6
+#define GLX_AUX_BUFFERS 7
+#define GLX_RED_SIZE 8
+#define GLX_GREEN_SIZE 9
+#define GLX_BLUE_SIZE 10
+#define GLX_ALPHA_SIZE 11
+#define GLX_DEPTH_SIZE 12
+#define GLX_STENCIL_SIZE 13
+#define GLX_ACCUM_RED_SIZE 14
+#define GLX_ACCUM_GREEN_SIZE 15
+#define GLX_ACCUM_BLUE_SIZE 16
+#define GLX_ACCUM_ALPHA_SIZE 17
+typedef XVisualInfo* (APIENTRYP PFNGLXCHOOSEVISUALPROC)(Display* dpy, int screen, int * attribList);
+typedef GLXContext (APIENTRYP PFNGLXCREATECONTEXTPROC)(Display* dpy, XVisualInfo* vis, GLXContext shareList, Bool direct);
+typedef void (APIENTRYP PFNGLXDESTROYCONTEXTPROC)(Display* dpy, GLXContext ctx);
+typedef Bool (APIENTRYP PFNGLXMAKECURRENTPROC)(Display* dpy, GLXDrawable drawable, GLXContext ctx);
+typedef void (APIENTRYP PFNGLXCOPYCONTEXTPROC)(Display* dpy, GLXContext src, GLXContext dst, unsigned long mask);
+typedef void (APIENTRYP PFNGLXSWAPBUFFERSPROC)(Display* dpy, GLXDrawable drawable);
+typedef GLXPixmap (APIENTRYP PFNGLXCREATEGLXPIXMAPPROC)(Display* dpy, XVisualInfo* visual, Pixmap pixmap);
+typedef void (APIENTRYP PFNGLXDESTROYGLXPIXMAPPROC)(Display* dpy, GLXPixmap pixmap);
+typedef Bool (APIENTRYP PFNGLXQUERYEXTENSIONPROC)(Display* dpy, int * errorb, int * event);
+typedef Bool (APIENTRYP PFNGLXQUERYVERSIONPROC)(Display* dpy, int * maj, int * min);
+typedef Bool (APIENTRYP PFNGLXISDIRECTPROC)(Display* dpy, GLXContext ctx);
+typedef int (APIENTRYP PFNGLXGETCONFIGPROC)(Display* dpy, XVisualInfo* visual, int attrib, int * value);
+typedef GLXContext (APIENTRYP PFNGLXGETCURRENTCONTEXTPROC)(void);
+typedef GLXDrawable (APIENTRYP PFNGLXGETCURRENTDRAWABLEPROC)(void);
+typedef void (APIENTRYP PFNGLXWAITGLPROC)(void);
+typedef void (APIENTRYP PFNGLXWAITXPROC)(void);
+typedef void (APIENTRYP PFNGLXUSEXFONTPROC)(Font font, int first, int count, int list);
+#endif
+
+#ifndef GL_VERSION_1_0
+#define GL_VERSION_1_0 1
+typedef void GLvoid;
+typedef unsigned int GLenum;
+typedef float GLfloat;
+typedef int GLint;
+typedef int GLsizei;
+typedef unsigned int GLbitfield;
+typedef double GLdouble;
+typedef unsigned int GLuint;
+typedef unsigned char GLboolean;
+typedef unsigned char GLubyte;
+typedef char GLbyte;
+typedef short GLshort;
+typedef unsigned short GLushort;
+#endif 
+
+#ifndef GLX_VERSION_1_1
+#define GLX_VERSION_1_1 1
+#define GLX_VENDOR 0x1
+#define GLX_VERSION 0x2
+#define GLX_EXTENSIONS 0x3
+typedef const char * (APIENTRYP PFNGLXQUERYEXTENSIONSSTRINGPROC)(Display* dpy, int screen);
+typedef const char * (APIENTRYP PFNGLXQUERYSERVERSTRINGPROC)(Display* dpy, int screen, int name);
+typedef const char * (APIENTRYP PFNGLXGETCLIENTSTRINGPROC)(Display* dpy, int name);
+#endif 
+
+#ifndef GLX_VERSION_1_2
+#define GLX_VERSION_1_2 1
+typedef Display* (APIENTRYP PFNGLXGETCURRENTDISPLAYPROC)(void);
+#endif 
+
+#ifndef GLX_VERSION_1_3
+#define GLX_VERSION_1_3 1
+typedef XID GLXContextID;
+typedef struct __GLXFBConfigRec *GLXFBConfig;
+typedef XID GLXWindow;
+typedef XID GLXPbuffer;
+#define GLX_WINDOW_BIT 0x00000001
+#define GLX_PIXMAP_BIT 0x00000002
+#define GLX_PBUFFER_BIT 0x00000004
+#define GLX_RGBA_BIT 0x00000001
+#define GLX_COLOR_INDEX_BIT 0x00000002
+#define GLX_PBUFFER_CLOBBER_MASK 0x08000000
+#define GLX_FRONT_LEFT_BUFFER_BIT 0x00000001
+#define GLX_FRONT_RIGHT_BUFFER_BIT 0x00000002
+#define GLX_BACK_LEFT_BUFFER_BIT 0x00000004
+#define GLX_BACK_RIGHT_BUFFER_BIT 0x00000008
+#define GLX_AUX_BUFFERS_BIT 0x00000010
+#define GLX_DEPTH_BUFFER_BIT 0x00000020
+#define GLX_STENCIL_BUFFER_BIT 0x00000040
+#define GLX_ACCUM_BUFFER_BIT 0x00000080
+#define GLX_CONFIG_CAVEAT 0x20
+#define GLX_X_VISUAL_TYPE 0x22
+#define GLX_TRANSPARENT_TYPE 0x23
+#define GLX_TRANSPARENT_INDEX_VALUE 0x24
+#define GLX_TRANSPARENT_RED_VALUE 0x25
+#define GLX_TRANSPARENT_GREEN_VALUE 0x26
+#define GLX_TRANSPARENT_BLUE_VALUE 0x27
+#define GLX_TRANSPARENT_ALPHA_VALUE 0x28
+#define GLX_DONT_CARE 0xFFFFFFFF
+#define GLX_NONE 0x8000
+#define GLX_SLOW_CONFIG 0x8001
+#define GLX_TRUE_COLOR 0x8002
+#define GLX_DIRECT_COLOR 0x8003
+#define GLX_PSEUDO_COLOR 0x8004
+#define GLX_STATIC_COLOR 0x8005
+#define GLX_GRAY_SCALE 0x8006
+#define GLX_STATIC_GRAY 0x8007
+#define GLX_TRANSPARENT_RGB 0x8008
+#define GLX_TRANSPARENT_INDEX 0x8009
+#define GLX_VISUAL_ID 0x800B
+#define GLX_SCREEN 0x800C
+#define GLX_NON_CONFORMANT_CONFIG 0x800D
+#define GLX_DRAWABLE_TYPE 0x8010
+#define GLX_RENDER_TYPE 0x8011
+#define GLX_X_RENDERABLE 0x8012
+#define GLX_FBCONFIG_ID 0x8013
+#define GLX_RGBA_TYPE 0x8014
+#define GLX_COLOR_INDEX_TYPE 0x8015
+#define GLX_MAX_PBUFFER_WIDTH 0x8016
+#define GLX_MAX_PBUFFER_HEIGHT 0x8017
+#define GLX_MAX_PBUFFER_PIXELS 0x8018
+#define GLX_PRESERVED_CONTENTS 0x801B
+#define GLX_LARGEST_PBUFFER 0x801C
+#define GLX_WIDTH 0x801D
+#define GLX_HEIGHT 0x801E
+#define GLX_EVENT_MASK 0x801F
+#define GLX_DAMAGED 0x8020
+#define GLX_SAVED 0x8021
+#define GLX_WINDOW 0x8022
+#define GLX_PBUFFER 0x8023
+#define GLX_PBUFFER_HEIGHT 0x8040
+#define GLX_PBUFFER_WIDTH 0x8041
+typedef GLXFBConfig * (APIENTRYP PFNGLXGETFBCONFIGSPROC)(Display* dpy, int screen, int * nelements);
+typedef GLXFBConfig * (APIENTRYP PFNGLXCHOOSEFBCONFIGPROC)(Display* dpy, int screen, const int * attrib_list, int * nelements);
+typedef int (APIENTRYP PFNGLXGETFBCONFIGATTRIBPROC)(Display* dpy, GLXFBConfig config, int attribute, int * value);
+typedef XVisualInfo* (APIENTRYP PFNGLXGETVISUALFROMFBCONFIGPROC)(Display* dpy, GLXFBConfig config);
+typedef GLXWindow (APIENTRYP PFNGLXCREATEWINDOWPROC)(Display* dpy, GLXFBConfig config, Window win, const int * attrib_list);
+typedef void (APIENTRYP PFNGLXDESTROYWINDOWPROC)(Display* dpy, GLXWindow win);
+typedef GLXPixmap (APIENTRYP PFNGLXCREATEPIXMAPPROC)(Display* dpy, GLXFBConfig config, Pixmap pixmap, const int * attrib_list);
+typedef void (APIENTRYP PFNGLXDESTROYPIXMAPPROC)(Display* dpy, GLXPixmap pixmap);
+typedef GLXPbuffer (APIENTRYP PFNGLXCREATEPBUFFERPROC)(Display* dpy, GLXFBConfig config, const int * attrib_list);
+typedef void (APIENTRYP PFNGLXDESTROYPBUFFERPROC)(Display* dpy, GLXPbuffer pbuf);
+typedef void (APIENTRYP PFNGLXQUERYDRAWABLEPROC)(Display* dpy, GLXDrawable draw, int attribute, unsigned int * value);
+typedef GLXContext (APIENTRYP PFNGLXCREATENEWCONTEXTPROC)(Display* dpy, GLXFBConfig config, int render_type, GLXContext share_list, Bool direct);
+typedef Bool (APIENTRYP PFNGLXMAKECONTEXTCURRENTPROC)(Display* dpy, GLXDrawable draw, GLXDrawable read, GLXContext ctx);
+typedef GLXDrawable (APIENTRYP PFNGLXGETCURRENTREADDRAWABLEPROC)(void);
+typedef int (APIENTRYP PFNGLXQUERYCONTEXTPROC)(Display* dpy, GLXContext ctx, int attribute, int * value);
+typedef void (APIENTRYP PFNGLXSELECTEVENTPROC)(Display* dpy, GLXDrawable draw, unsigned long event_mask);
+typedef void (APIENTRYP PFNGLXGETSELECTEDEVENTPROC)(Display* dpy, GLXDrawable draw, unsigned long * event_mask);
+#endif
+
+#ifndef GLX_VERSION_1_4
+#define GLX_VERSION_1_4 1
+typedef void (APIENTRY *__GLXextFuncPtr)(void);
+#define GLX_SAMPLE_BUFFERS 100000
+#define GLX_SAMPLES 100001
+typedef __GLXextFuncPtr (APIENTRYP PFNGLXGETPROCADDRESSPROC)(const GLubyte * procName);
+#endif 
+
+#ifndef GLX_ARB_create_context
+#define GLX_ARB_create_context
+#define GLX_CONTEXT_DEBUG_BIT_ARB 0x00000001
+#define GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB 0x00000002
+#define GLX_CONTEXT_MAJOR_VERSION_ARB 0x2091
+#define GLX_CONTEXT_MINOR_VERSION_ARB 0x2092
+#define GLX_CONTEXT_FLAGS_ARB 0x2094
+#endif 
+
+#ifndef GLX_ARB_create_context_profile
+#define GLX_ARB_create_context_profile 1
+#define GLX_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+#define GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+#define GLX_CONTEXT_PROFILE_MASK_ARB 0x9126
+#endif
+
+
+
+
+typedef XVisualInfo* glx_get_visual_from_fbconfig_proc_t(Display* display, Window window);
+typedef void glx_make_current_proc_t(Display* display, Window window, GLXContext context);
+typedef XVisualInfo* glx_choose_fbconfig_proc_t(Display* display, int screen, const int* attribs, int* result);
+typedef void* glx_get_proc_address_proc_t(unsigned char* proc);
+typedef int glx_get_fbconfig_attrib_proc_t(Display* display, GLXFBConfig config, int attribute, int* value);
+typedef void glx_swap_buffers_proc_t(Display* display, Window window);
+typedef GLXContext glx_create_context_attribs_arb_proc_t(Display *dpy, GLXFBConfig config,  GLXContext share_context, Bool direct, const int *attrib_list);
+
+glx_get_visual_from_fbconfig_proc_t* glx_get_visual_from_fbconfig = NULL;
+glx_make_current_proc_t* glx_make_current = NULL;
+glx_get_proc_address_proc_t* glx_get_proc_address = NULL;
+glx_choose_fbconfig_proc_t* glx_choose_fbconfig = NULL;
+glx_get_fbconfig_attrib_proc_t* glx_get_fbconfig_attrib = NULL;
+glx_swap_buffers_proc_t* glx_swap_buffers = NULL;
+glx_create_context_attribs_arb_proc_t* glx_create_context_attribs_arb = NULL;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	XDestroyImage(renderer->image);
@@ -1463,7 +1676,7 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 	return renderer;
 }
 
-smol_frame_t* smol_frame_create_advanced(int width, int height, const char* title, unsigned int flags, smol_frame_t* parent) {
+smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 
 	//TODO: Window parenting
 	
@@ -1503,15 +1716,15 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	result_window = XCreateWindow(
 		display, 
 		parentWindow, 
-		(attributes.width + width) >> 1, 
-		(attributes.height + height) >> 1, 
-		width, 
-		height, 
+		(attributes.width + config->width) >> 1, 
+		(attributes.height + config->height) >> 1, 
+		config->width, 
+		config->height, 
 		0,
 		CopyFromParent, 
 		CopyFromParent,
 		CopyFromParent, 
-		CWEventMask, 
+		CWEventMask | CWColormap, 
 		&setAttributes
 	);
 
@@ -1519,12 +1732,12 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		return NULL;
 
 
-	if(!(flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON)) {
+	if(!(config->flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON)) {
 
 		XSizeHints* sizeHints = XAllocSizeHints();
 		sizeHints->flags = PMinSize | PMaxSize;
-		sizeHints->min_width = sizeHints->max_width = width;
-		sizeHints->min_height = sizeHints->max_height = height;
+		sizeHints->min_width = sizeHints->max_width = config->width;
+		sizeHints->min_height = sizeHints->max_height = config->height;
 		XSetWMNormalHints(display, result_window, sizeHints);
 
 		setAttributes.override_redirect = True;
@@ -1557,7 +1770,7 @@ XChangeProperty(
 */
 
 
-	XStoreName(display, result_window, title);
+	XStoreName(display, result_window, config->title);
 	XMapWindow(display, result_window);
 
 	im = XOpenIM(display, NULL, NULL, NULL);
@@ -1572,16 +1785,117 @@ XChangeProperty(
 	result->frame_window = result_window;
 	result->event_queue = smol_event_queue_create(2048);
 	result->renderer = NULL;
-	result->width = width;
-	result->height = height;
+	result->width = config->width;
+	result->height = config->height;
 	result->ic = ic;
 	result->im = im;
 
 	XChangeProperty(display, result_window, smol__frame_handle_atom, XA_STRING, 8, PropertyChangeMask, (const unsigned char*)&result, sizeof(smol_frame_t*));
 	XFlush(display);
 
-	if(!(flags & SMOL_FRAME_CONFIG_SUPPORT_OPENGL)) {
+	if(!(config->gl_spec)) {
 		result->renderer = smol_renderer_create(result);
+	} else {
+
+		smol_frame_gl_spec_t* spec = config->gl_spec;
+		
+		int initialized = (glx_get_proc_address && glx_get_visual_from_fbconfig);
+		if(!initialized) {
+			void* libgl = dlopen("libGL.so", RTLD_NOW);
+			if(libgl == NULL) libgl = dlopen("libGL.so.1", RTLD_NOW);
+
+			SMOL_ASSERT("Couldn't load libGL.so dynamically!" && libgl);
+
+			glx_get_visual_from_fbconfig = (glx_get_visual_from_fbconfig_proc_t*)dlsym(libgl, "glXGetVisualFromFBConfig");
+			glx_choose_fbconfig = (glx_choose_fbconfig_proc_t*)dlsym(libgl, "glXChooseFBConfig");
+			glx_make_current = (glx_make_current_proc_t*)dlsym(libgl, "glXMakeCurrent");
+			glx_get_fbconfig_attrib = (glx_get_fbconfig_attrib_proc_t*)dlsym(libgl, "glXGetFBConfigAttrib");
+			glx_get_proc_address = (glx_get_proc_address_proc_t*)dlsym(libgl, "glXGetProcAddress");
+		 	glx_swap_buffers = (glx_swap_buffers_proc_t*)dlsym(libgl, "glXSwapBuffers");
+			
+			glx_create_context_attribs_arb = glx_get_proc_address((unsigned char*)"glXCreateContextAttribsARB");
+			
+		}
+
+		int attribs[64] = {
+			GLX_X_RENDERABLE, 1, //0, 1
+			GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT, //2, 3
+			GLX_RENDER_TYPE, GLX_RGBA_BIT, //4, 5
+			GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR, //6, 7
+			GLX_RED_SIZE, spec->color_bits/3, //8, 9
+			GLX_GREEN_SIZE, spec->color_bits/3, //10, 11
+			GLX_BLUE_SIZE, spec->color_bits/3, //12, 13
+			GLX_ALPHA_SIZE, spec->alpha_bits, //14, 15
+			GLX_DEPTH_SIZE, spec->depth_bits, //16, 17
+			GLX_STENCIL_SIZE, spec->stencil_bits, // 18, 19
+			GLX_DOUBLEBUFFER, 1, //20, 21
+		};
+
+		/*
+			GLX_SAMPLE_BUFFERS, spec->has_multi_sampling,
+			GLX_SAMPLES, spec->num_multi_samples,
+		*/
+
+		GLXFBConfig* config = NULL;
+		{
+			int count = 0;
+			GLXFBConfig* configs = glx_choose_fbconfig(display, DefaultScreen(display), attribs, &count);
+			int bestFbc = -1; 
+			int bestSampleCount = 999;
+			SMOL_ASSERT("No configurations!" && count);
+
+			for(int i = 0; i < count; i++) {
+				XVisualInfo* vi = glx_get_visual_from_fbconfig(display, configs[i]);
+				if(vi) {
+					int sampleBuffers, num_samples;
+					glx_get_fbconfig_attrib(display, configs[i], GLX_SAMPLE_BUFFERS, &sampleBuffers);
+					glx_get_fbconfig_attrib(display, configs[i], GLX_SAMPLES, &num_samples);
+					
+					int diff = (spec->num_multi_samples - num_samples);
+					if(diff < 0) diff = -diff;
+
+					if(sampleBuffers && diff < bestSampleCount) {
+						bestFbc = i;
+						bestSampleCount = num_samples;
+					}
+				}
+				XFree(vi);
+			}
+
+			if(bestFbc > 0) {
+				attribs[22] = GLX_SAMPLE_BUFFERS;
+				attribs[23] = 1;
+				attribs[24] = GLX_SAMPLES;
+				attribs[25] = bestSampleCount;
+			}
+
+			config = configs[bestFbc];
+		}
+
+		XVisualInfo* visualinfo = glx_get_visual_from_fbconfig(display, config);
+
+		Window root_window = RootWindow(display, visualinfo->screen);
+		Colormap color_map = XCreateColormap(display, root_window, visualinfo->visual, AllocNone);
+
+		int num_colormaps = XInstallColormap(display, color_map);
+
+		int context_attribs[] = {
+			GLX_CONTEXT_MAJOR_VERSION_ARB, spec->major_version,
+			GLX_CONTEXT_MINOR_VERSION_ARB, spec->minor_version,
+			GLX_CONTEXT_FLAGS_ARB, 
+				(spec->depth_bits ? GLX_CONTEXT_DEBUG_BIT_ARB : 0) |
+				(spec->is_forward_compatible ? GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB : 0),
+			GLX_CONTEXT_PROFILE_MASK_ARB, spec->is_backward_compatible ? 
+				GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : 
+				GLX_CONTEXT_CORE_PROFILE_BIT_ARB
+		};
+
+		/*
+		GLXContext glXCreateContextAttribsARB(Display *dpy, GLXFBConfig config, GLXContext share_context, Bool direct, const int *attrib_list);
+		*/
+		result->gl.context = glx_create_context_attribs_arb(display, config, NULL, True, context_attribs);
+		glx_make_current(result->display_server_connection, result->frame_window, result->gl.context);
+
 	}
 
 	//result->window_attributes = setAttributes;
@@ -1594,6 +1908,12 @@ XChangeProperty(
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 	XStoreName(frame->display_server_connection, frame->frame_window, title);
 	XFlush(frame->display_server_connection);
+}
+
+int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
+	if(!frame->gl.context) return 0;
+	glx_swap_buffers(frame->display_server_connection, frame->frame_window);
+	return 1;
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {
