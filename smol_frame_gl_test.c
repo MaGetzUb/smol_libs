@@ -35,17 +35,19 @@ const char fsh[] =
 	"}"
 ;
 
-//#define gl_assert					\
-//do {								\
-//	GLenum error = glGetError();	\
-//	if(error != GL_NO_ERROR) {		\
-//		printf("%d\n", error);		\
-//		SMOL_BREAKPOINT();			\
-//	}								\
+//#define gl_assert              \
+//do {                           \
+//	GLenum error = glGetError(); \
+//	if(error != GL_NO_ERROR) {   \
+//		printf("%d\n", error);   \
+//		SMOL_BREAKPOINT();       \
+//	}                            \
 //} while(0)
 
 int main() {
 
+
+	GLenum result = glbInit(NULL, NULL);
 
 	smol_frame_gl_spec_t gl_spec = {
 		.major_version = 3,
@@ -70,9 +72,7 @@ int main() {
 	};
 
 
-	GLenum result = glbInit(NULL, NULL);
 	smol_frame_t* frame = smol_frame_create_advanced(&frame_config);
-	
 
 
 	puts(glGetString(GL_VERSION));
@@ -129,7 +129,7 @@ int main() {
 		char log[1024] = { 0 };
 		GLsizei length;
 		glGetProgramInfoLog(program, 1024, &length, log);
-		printf("Shader program info: %s\n", log);
+		if(length) printf("Shader program info: %s\n", log);
 	}
 
 	GLuint vertexData = 0;
@@ -167,6 +167,12 @@ int main() {
 
 		smol_frame_gl_swap_buffers(frame);
 	}
+
+	glDeleteVertexArrays(1, &vao);
+	glDeleteBuffers(1, &vbData);
+	glDeleteProgram(program);
+
+	smol_frame_destroy(frame);
 
 	return 0;
 }
