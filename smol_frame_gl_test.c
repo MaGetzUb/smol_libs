@@ -2,11 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define EXCLUDE_REDECLARED_FUNCTIONS
+#define GLBIND_IMPLEMENTATION
+#include "thirdparty/glbind.h"
+
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
-#define GLBIND_IMPLEMENTATION
-#include "thirdparty/glbind.h"
+#define SMOL_UTILS_IMPLEMENTATION
+#include "smol_utils.h"
+
+#include "smol_font_16x16.h"
 
 const char vsh[] =
 	"#version 330\n"
@@ -14,12 +20,14 @@ const char vsh[] =
 	"\n"
 	"layout(location = 0) in vec2 aPos;\n"
 	"layout(location = 1) in vec3 aCol;\n"
+	"uniform float uAngle;\n"
 	"\n"
 	"out vec3 vCol;\n"
 	"\n"
 	"void main() {\n"
 	"	vCol = aCol;\n"
-	"	gl_Position = vec4(aPos, 0.f, .5f);\n"
+	"   mat2 rot = mat2(cos(uAngle), sin(uAngle), sin(uAngle), -cos(uAngle));\n"
+	"	gl_Position = vec4(rot*aPos*vec2(1., 4./3.), 0.f, .5f);\n"
 	"}\n"
 ;
 
@@ -60,7 +68,7 @@ int main() {
 		.stencil_bits = 8,
 		.is_debug = 1,
 		.has_multi_sampling = 1,
-		.num_multi_samples = 4
+		.num_multi_samples = 8
 	};
 
 	smol_frame_config_t frame_config = {
@@ -71,6 +79,7 @@ int main() {
 		.gl_spec = &gl_spec
 	};
 
+	glEnable(GL_MULTISAMPLE);
 
 	smol_frame_t* frame = smol_frame_create_advanced(&frame_config);
 
@@ -88,7 +97,8 @@ int main() {
 		{ + 0.f, +.25f, 0.f, 1.f, 0.f },
 		{ +.25f, -.25f, 0.f, 0.f, 1.f },
 	};
-
+	
+	puts("Creating vertex shader module...");
 	GLuint vshader = glCreateShader(GL_VERTEX_SHADER);
 	{
 		char log[1024] = { 0 };
@@ -103,7 +113,8 @@ int main() {
 		glGetShaderInfoLog(vshader, 1024, &length, log);
 		if(length) printf("Vertex shader compilation info: %s\n", log);
 	}
-
+	
+	puts("Creating fragment shader module...");
 	GLuint fshader = glCreateShader(GL_FRAGMENT_SHADER);
 	{
 		char log[1024] = { 0 };
@@ -119,7 +130,8 @@ int main() {
 		if(length) printf("Fragment shader compilation info: %s\n", log);
 	};
 
-
+	
+	puts("Creating shader program...");
 	GLuint program = glCreateProgram();
 	glAttachShader(program, vshader);
 	glAttachShader(program, fshader);
@@ -131,7 +143,8 @@ int main() {
 		glGetProgramInfoLog(program, 1024, &length, log);
 		if(length) printf("Shader program info: %s\n", log);
 	}
-
+	
+	puts("Generating vbo...");
 	GLuint vertexData = 0;
 	glGenBuffers(1, &vertexData);
 	glBindBuffer(GL_ARRAY_BUFFER, vertexData);
@@ -139,7 +152,7 @@ int main() {
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 
-	
+	puts("Generating vao...");
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
@@ -151,15 +164,52 @@ int main() {
 	glEnableVertexArrayAttrib(vao, 1);
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 5, (void*)(sizeof(float)*2));
 	glBindVertexArray(0);
+	
+	
+	GLuint font;
+	{
+		puts("Generating pixel buffer for texture...");
+		GLubyte pixels[65536][4] = { 0 };
+		for(int i = 0; i < 8; i++)
+		for(int j = 0; j < 16; j++)
+		{
+			int id = j + i * 16;
+			for(int y = 0; y < 16; y++) 
+			for(int x = 0; x < 16; x++) {
+				int idx = (j * 16 + x) + (i * 16 + y) * 256;
+				pixels[idx][0] = pixels[idx][1] = pixels[idx][2] = 255;
+				pixels[idx][3] = 255 * PXF_SMOL_FONT_16X16_DATA[id][y][x];
+			}
+		}
 
+
+		puts("Creating a font texture...");
+		glGenTextures(1, &font);
+		glBindTexture(GL_TEXTURE_2D, font);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
 
 	glClearColor(0.f, 0.f, 0.5f, 1.f);
+
+	GLuint uniform_angle_location = glGetUniformLocation(program, "uAngle");
+
+	puts("Mainloop begins...");
+
+	double start_time = smol_timer();
 
 	while(!smol_frame_is_closed(frame)) {
 		smol_frame_update(frame);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		float rot = (smol_timer() - start_time)*6.283/10.;
+
 		glUseProgram(program);
+		glUniform1fv(uniform_angle_location, 1, &rot);
 		glBindVertexArray(vao);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 		glBindVertexArray(0);
@@ -176,3 +226,4 @@ int main() {
 
 	return 0;
 }
+
