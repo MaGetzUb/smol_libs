@@ -129,7 +129,14 @@ Contributions:
 //Forward declaration for frame handle
 typedef struct _smol_frame_t smol_frame_t;
 
+//Forward declare smol frame event queue
 typedef struct _smol_event_queue_t smol_event_queue_t;
+
+//Forward declare smol frame opengl context structure
+typedef struct _smol_gl_context_t smol_gl_context_t;
+
+//Forward declare frame initialization config structure
+typedef struct _smol_frame_config_t smol_frame_config_t;
 
 //Forward declaration for frame event 
 typedef struct _smol_frame_event_t smol_frame_event_t;
@@ -142,7 +149,7 @@ typedef struct _smol_frame_event_t smol_frame_event_t;
 // - unsigned int flags   -- behavioral hints for the window (is it resizable, does it support OpenGL etc)
 // - smol_frame_t* parent -- parent window for this window
 //Returns: smol_frame_t*  -- a handle to the newly created window
-smol_frame_t* smol_frame_create_advanced(int width, int height, const char* title, unsigned int flags, smol_frame_t* parent);
+smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config);
 
 //smol_frame_create - Creates a window
 //Arguments:
@@ -209,6 +216,12 @@ smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame);
 // - smol_frame_t* frame -- A window that's event queue is being set
 void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* eventQueue);
 
+//smol_frame_gl_swap_buffers - Swaps opengl buffers
+//Arguments:
+// - smol_frame_t* frame frame -- A window that's opengl buffers are being swapped
+//Returns: int - containing 1 if succeeded, 0 otherwise
+int smol_frame_gl_swap_buffers(smol_frame_t* frame);
+
 #if defined(SMOL_PLATFORM_WINDOWS)
 
 //smol_frame_get_win32_window_handle - Gets the HWND window handle on Windows 
@@ -222,6 +235,13 @@ HWND smol_frame_get_win32_window_handle(smol_frame_t* frame);
 // - smol_frame_t* frame -- A frame we want the module handle from
 //Returns: HINSTANCE - the module handle 
 HINSTANCE smol_frame_get_win32_module_handle(smol_frame_t* frame);
+
+
+//smol_frame_get_win32_window_handle - Gets the Window's module handle on Windows 
+//Arguments:
+// - smol_frame_t* frame -- A frame we want the module handle from
+//Returns: HINSTANCE - the module handle 
+smol_gl_context_t smol_frame_get_gl_context(smol_frame_t* frame);
 
 #elif defined(SMOL_PLATFORM_LINUX)
 #	if defined(SMOL_FRAME_BACKEND_X11) 
@@ -283,12 +303,11 @@ typedef enum {
 	SMOL_FRAME_CONFIG_HAS_TITLEBAR        = 0x00000001U,
 	SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON = 0x00000002U,
 	SMOL_FRAME_CONFIG_IS_RESIZABLE        = 0x00000004U,
-	SMOL_FRAME_CONFIG_SUPPORT_OPENGL      = 0x00000008U,
-	SMOL_FRAME_CONFIG_OWNS_EVENT_QUEUE    = 0x00000010U,
+	SMOL_FRAME_CONFIG_OWNS_EVENT_QUEUE    = 0x00000008U,
 	SMOL_FRAME_DEFAULT_CONFIG             = (
 		SMOL_FRAME_CONFIG_HAS_TITLEBAR | SMOL_FRAME_CONFIG_OWNS_EVENT_QUEUE
 	)
-} smol_frame_config;
+} smol_frame_config_flags;
 
 //All the event types
 typedef enum smol_frame_event_type_ {
@@ -305,6 +324,29 @@ typedef enum smol_frame_event_type_ {
 	SMOL_FRAME_EVENT_FOCUS_GAINED,
 	SMOL_FRAME_EVENT_TEXT_INPUT
 } smol_frame_event_type;
+
+typedef struct _smol_frame_gl_spec_t {
+	int major_version;
+	int minor_version;
+	int is_backward_compatible;
+	int is_forward_compatible;
+	int is_debug;
+	int color_bits; //Usually 24
+	int alpha_bits; //Usually 8
+	int depth_bits; //Usually 16, 24 or 32
+	int stencil_bits; //Usually 8
+	int has_multi_sampling;
+	int num_multi_samples;
+} smol_frame_gl_spec_t;
+
+typedef struct _smol_frame_config_t {
+	int width;
+	int height;
+	const char* title;
+	unsigned int flags;
+	smol_frame_t* parent;
+	smol_frame_gl_spec_t* gl_spec;
+} smol_frame_config_t;
 
 //Keyboard event
 typedef struct {
@@ -431,6 +473,16 @@ typedef struct {
 } smol_software_renderer_t;
 #endif 
 
+#if defined(SMOL_PLATFORM_WINDOWS)
+typedef struct _smol_gl_context_t {
+	HGLRC context;
+} smol_gl_context_t;
+#elif defined(SMOL_PLATFORM_LINUX)
+typedef struct _smol_gl_context_t {
+	GLXContext context;
+};
+#endif 
+
 typedef struct _smol_frame_t {
 #if defined(SMOL_PLATFORM_WINDOWS)
 	HWND frame_handle_win32;
@@ -466,6 +518,7 @@ typedef struct _smol_frame_t {
 	int mouse_w_accum;
 
 	smol_event_queue_t* event_queue;
+	smol_gl_context_t gl;
 } smol_frame_t;
 
 
@@ -563,7 +616,15 @@ int smol_event_queue_pop_back(smol_event_queue_t* queue, smol_frame_event_t* eve
 #pragma region Platform agnostic functions
 
 smol_frame_t* smol_frame_create(int width, int height, const char* title) {
-	return smol_frame_create_advanced(width, height, title, SMOL_FRAME_DEFAULT_CONFIG, NULL);
+
+	smol_frame_config_t config = { 0 };
+	config.width = width;
+	config.height = height;
+	config.title = title;
+	config.flags = SMOL_FRAME_DEFAULT_CONFIG;
+
+	return smol_frame_create_advanced(&config);
+
 }
 
 int smol_frame_acquire_event(smol_frame_t* frame, smol_frame_event_t* event) {
@@ -599,11 +660,147 @@ smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame) {
 
 #pragma region Win32 Implementation
 #if defined(SMOL_PLATFORM_WINDOWS)
+
 WNDCLASSEX wndClass;
+
+//Some OpenGL Stuff for windows:
+typedef HGLRC wgl_create_context_proc_t(HDC);
+typedef BOOL wgl_delete_context_proct_t(HGLRC);
+typedef BOOL wgl_make_current_proc_t(HDC, HGLRC);
+typedef PROC wgl_get_proc_address_proc_t(LPCSTR);
+
+typedef HGLRC wgl_create_context_attribs_arb_proc_t(HDC hDC, HGLRC hshareContext, const int *attribList);
+typedef BOOL wgl_choose_pixel_format_arb_proc_t(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
+
+typedef BOOL wgl_get_pixel_format_attribiv_arb_proc_t(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
+typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);
+
+
+
+//https://registry.khronos.org/OpenGL/extensions/ARB/WGL_ARB_create_context.txt
+//Accepted as an attribute name in <*attribList>:
+#define WGL_CONTEXT_MAJOR_VERSION_ARB           0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB           0x2092
+#define WGL_CONTEXT_LAYER_PLANE_ARB             0x2093
+#define WGL_CONTEXT_FLAGS_ARB                   0x2094
+#define WGL_CONTEXT_PROFILE_MASK_ARB            0x9126
+
+//Accepted as bits in the attribute value for WGL_CONTEXT_FLAGS in
+//<*attribList>:
+#define WGL_CONTEXT_DEBUG_BIT_ARB               0x0001
+#define WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB  0x0002
+
+//Accepted as bits in the attribute value for
+//WGL_CONTEXT_PROFILE_MASK_ARB //in <*attribList>:
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB        0x00000001
+#define WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
+
+//New errors returned by GetLastError:
+#define ERROR_INVALID_VERSION_ARB               0x2095
+#define ERROR_INVALID_PROFILE_ARB               0x2096
+
+//https://registry.khronos.org/OpenGL/extensions/ARB/WGL_ARB_pixel_format.txt
+//Accepted in the <piAttributes> parameter array of
+//wgl_get_pixel_format_attribiv_arb, and wgl_get_pixel_format_attribfv_arb, and
+//as a type in the <piAttribIList> and <pfAttribFList> parameter
+//arrays of wgl_choose_pixel_format_arb:
+#define WGL_NUMBER_PIXEL_FORMATS_ARB            0x2000
+#define WGL_DRAW_TO_WINDOW_ARB                  0x2001
+#define WGL_DRAW_TO_BITMAP_ARB                  0x2002
+#define WGL_ACCELERATION_ARB                    0x2003
+#define WGL_NEED_PALETTE_ARB                    0x2004
+#define WGL_NEED_SYSTEM_PALETTE_ARB             0x2005
+#define WGL_SWAP_LAYER_BUFFERS_ARB              0x2006
+#define WGL_SWAP_METHOD_ARB                     0x2007
+#define WGL_NUMBER_OVERLAYS_ARB                 0x2008
+#define WGL_NUMBER_UNDERLAYS_ARB                0x2009
+#define WGL_TRANSPARENT_ARB                     0x200A
+#define WGL_TRANSPARENT_RED_VALUE_ARB           0x2037
+#define WGL_TRANSPARENT_GREEN_VALUE_ARB         0x2038
+#define WGL_TRANSPARENT_BLUE_VALUE_ARB          0x2039
+#define WGL_TRANSPARENT_ALPHA_VALUE_ARB         0x203A
+#define WGL_TRANSPARENT_INDEX_VALUE_ARB         0x203B
+#define WGL_SHARE_DEPTH_ARB                     0x200C
+#define WGL_SHARE_STENCIL_ARB                   0x200D
+#define WGL_SHARE_ACCUM_ARB                     0x200E
+#define WGL_SUPPORT_GDI_ARB                     0x200F
+#define WGL_SUPPORT_OPENGL_ARB                  0x2010
+#define WGL_DOUBLE_BUFFER_ARB                   0x2011
+#define WGL_STEREO_ARB                          0x2012
+#define WGL_PIXEL_TYPE_ARB                      0x2013
+#define WGL_COLOR_BITS_ARB                      0x2014
+#define WGL_RED_BITS_ARB                        0x2015
+#define WGL_RED_SHIFT_ARB                       0x2016
+#define WGL_GREEN_BITS_ARB                      0x2017
+#define WGL_GREEN_SHIFT_ARB                     0x2018
+#define WGL_BLUE_BITS_ARB                       0x2019
+#define WGL_BLUE_SHIFT_ARB                      0x201A
+#define WGL_ALPHA_BITS_ARB                      0x201B
+#define WGL_ALPHA_SHIFT_ARB                     0x201C
+#define WGL_ACCUM_BITS_ARB                      0x201D
+#define WGL_ACCUM_RED_BITS_ARB                  0x201E
+#define WGL_ACCUM_GREEN_BITS_ARB                0x201F
+#define WGL_ACCUM_BLUE_BITS_ARB                 0x2020
+#define WGL_ACCUM_ALPHA_BITS_ARB                0x2021
+#define WGL_DEPTH_BITS_ARB                      0x2022
+#define WGL_STENCIL_BITS_ARB                    0x2023
+#define WGL_AUX_BUFFERS_ARB                     0x2024
+
+// Accepted as a value in the <piAttribIList> and <pfAttribFList>
+// parameter arrays of wgl_choose_pixel_format_arb, and returned in the
+// <piValues> parameter array of wgl_get_pixel_format_attribiv_arb, and the
+// <pfValues> parameter array of wgl_get_pixel_format_attribfv_arb:
+#define WGL_NO_ACCELERATION_ARB                 0x2025
+#define WGL_GENERIC_ACCELERATION_ARB            0x2026
+#define WGL_FULL_ACCELERATION_ARB               0x2027
+
+#define WGL_SWAP_EXCHANGE_ARB                   0x2028
+#define WGL_SWAP_COPY_ARB                       0x2029
+#define WGL_SWAP_UNDEFINED_ARB                  0x202A
+
+#define WGL_TYPE_RGBA_ARB                       0x202B
+#define WGL_TYPE_COLORINDEX_ARB                 0x202C
+
+// https://registry.khronos.org/OpenGL/extensions/ARB/ARB_multisample.txt
+//Accepted by the <piAttributes> parameter of
+//wglGetPixelFormatAttribivEXT, wglGetPixelFormatAttribfvEXT, and
+//the <piAttribIList> and <pfAttribIList> of wglChoosePixelFormatEXT:
+#define WGL_SAMPLE_BUFFERS_ARB               0x2041
+#define WGL_SAMPLES_ARB                      0x2042
+
+//Accepted by the <cap> parameter of Enable, Disable, and IsEnabled,
+//and by the <pname> parameter of GetBooleanv, GetIntegerv,
+//GetFloatv, and GetDoublev:
+#define GL_MULTISAMPLE_ARB                      0x809D
+#define GL_SAMPLE_ALPHA_TO_COVERAGE_ARB         0x809E
+#define GL_SAMPLE_ALPHA_TO_ONE_ARB              0x809F
+#define GL_SAMPLE_COVERAGE_ARB                  0x80A0
+
+//    Accepted by the <mask> parameter of PushAttrib:
+#define GL_MULTISAMPLE_BIT_ARB                  0x20000000
+
+//Accepted by the <pname> parameter of GetBooleanv, GetDoublev,
+//GetIntegerv, and GetFloatv:
+#define GL_SAMPLE_BUFFERS_ARB                   0x80A8
+#define GL_SAMPLES_ARB                          0x80A9
+#define GL_SAMPLE_COVERAGE_VALUE_ARB            0x80AA
+#define GL_SAMPLE_COVERAGE_INVERT_ARB           0x80AB
+
+
+wgl_create_context_proc_t *wgl_create_context = NULL;
+wgl_delete_context_proct_t* wgl_delete_context = NULL;
+wgl_make_current_proc_t* wgl_make_current = NULL;
+wgl_get_proc_address_proc_t* wgl_get_proc_address = NULL;
+
+wgl_create_context_attribs_arb_proc_t* wgl_create_context_attribs_arb = NULL;
+
+wgl_get_pixel_format_attribfv_arb_proc_t* wgl_get_pixel_format_attribfv_arb = NULL;
+wgl_get_pixel_format_attribiv_arb_proc_t* wgl_get_pixel_format_attribiv_arb = NULL;
+wgl_choose_pixel_format_arb_proc_t* wgl_choose_pixel_format_arb = NULL;
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-smol_frame_t* smol_frame_create_advanced(int width, int height, const char* title, unsigned int flags, smol_frame_t* parent) {
+smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 
 	RECT winRect = { 0 };
 	HWND wnd = NULL;
@@ -641,16 +838,16 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		HMONITOR monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
 		MONITORINFO monitorInfo = { sizeof(monitorInfo) };
 		if(GetMonitorInfo(monitor, &monitorInfo) != FALSE) {
-			winRect.left = ((monitorInfo.rcMonitor.left + monitorInfo.rcMonitor.right) - width) >> 1;
-			winRect.top = ((monitorInfo.rcMonitor.top + monitorInfo.rcMonitor.bottom) - height) >> 1;
-			winRect.right = winRect.left + width;
-			winRect.bottom = winRect.top + height;
+			winRect.left = ((monitorInfo.rcMonitor.left + monitorInfo.rcMonitor.right) - config->width) >> 1;
+			winRect.top = ((monitorInfo.rcMonitor.top + monitorInfo.rcMonitor.bottom) - config->height) >> 1;
+			winRect.right = winRect.left + config->width;
+			winRect.bottom = winRect.top + config->height;
 		}
 	}
 
-	if(flags & SMOL_FRAME_CONFIG_HAS_TITLEBAR) exStyle |= WS_CAPTION;
-	if(flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON) exStyle |= WS_MAXIMIZEBOX;
-	if(flags & SMOL_FRAME_CONFIG_IS_RESIZABLE) exStyle |= WS_SIZEBOX;
+	if(config->flags & SMOL_FRAME_CONFIG_HAS_TITLEBAR) exStyle |= WS_CAPTION;
+	if(config->flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON) exStyle |= WS_MAXIMIZEBOX;
+	if(config->flags & SMOL_FRAME_CONFIG_IS_RESIZABLE) exStyle |= WS_SIZEBOX;
 
 	AdjustWindowRect(&winRect, exStyle, FALSE);
 
@@ -663,10 +860,10 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 
 #ifdef UNICODE
 	wchar_t wide_title[256] = { 0 };
-	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, title, (int)strlen(title), wide_title, 1024);
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, config->title, (int)strlen(config->title), wide_title, 1024);
 	title_text = wide_title;
 #else 
-	title_text = title;
+	title_text = config->title;
 #endif 
 
 	wnd = CreateWindowEx(
@@ -678,7 +875,7 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		winRect.top, 
 		winRect.right - winRect.left, 
 		winRect.bottom - winRect.top, 
-		parent ? (parent)->frame_handle_win32 : NULL, 
+		config->parent ? config->parent->frame_handle_win32 : NULL, 
 		NULL, 
 		wndClass.hInstance,
 		result
@@ -695,6 +892,144 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		SMOL_ASSERT(!"Window creation failed!");
 		SMOL_FREE(result);
 		result = NULL;
+
+	}
+
+	if(config->gl_spec) {
+
+
+		HDC dc = GetDC(wnd);
+		smol_frame_gl_spec_t* gl_spec = config->gl_spec;
+		
+		int has_gl_arb_functionality = (wgl_choose_pixel_format_arb && wgl_create_context_attribs_arb && wgl_get_pixel_format_attribfv_arb && wgl_get_pixel_format_attribiv_arb);
+
+		if(!has_gl_arb_functionality) {
+
+			HMODULE gl_module = LoadLibrary(TEXT("opengl32.dll"));
+
+			wgl_create_context = GetProcAddress(gl_module, "wglCreateContext");
+			wgl_delete_context = GetProcAddress(gl_module, "wglDeleteContext");
+			wgl_make_current = GetProcAddress(gl_module, "wglMakeCurrent");
+			wgl_get_proc_address = GetProcAddress(gl_module, "wglGetProcAddress");
+
+			HWND tmp = CreateWindowEx(NULL, wndClass.lpszClassName, L"", 0, 0, 0, 400, 300, NULL, NULL, wndClass.hInstance, NULL);
+
+			HDC hdc = GetDC(tmp);
+
+			PIXELFORMATDESCRIPTOR pfd = { 0 };
+			pfd.nSize = sizeof(pfd);
+			pfd.nVersion = 1;
+			pfd.dwFlags = PFD_SUPPORT_OPENGL | PFD_DRAW_TO_WINDOW | PFD_DOUBLEBUFFER | PFD_SWAP_EXCHANGE;
+			pfd.iPixelType = PFD_TYPE_RGBA;
+			pfd.cColorBits = 32;
+			pfd.cDepthBits = 24;
+			pfd.cAlphaBits = 8;
+			pfd.iLayerType = PFD_MAIN_PLANE;
+
+			int pixelFormat = ChoosePixelFormat(hdc, &pfd);
+
+			SetPixelFormat(hdc, pixelFormat, &pfd);
+
+			HGLRC tmpCtx = wgl_create_context(hdc);
+			wgl_make_current(hdc, tmpCtx);
+
+			wgl_create_context_attribs_arb = (wgl_create_context_attribs_arb_proc_t*)wgl_get_proc_address("wglCreateContextAttribsARB");
+			wgl_choose_pixel_format_arb = (wgl_choose_pixel_format_arb_proc_t*)wgl_get_proc_address("wglChoosePixelFormatARB");
+			wgl_get_pixel_format_attribfv_arb = (wgl_get_pixel_format_attribfv_arb_proc_t*)wgl_get_proc_address("wglGetPixelFormatAttribfvARB");
+			wgl_get_pixel_format_attribiv_arb = (wgl_get_pixel_format_attribiv_arb_proc_t*)wgl_get_proc_address("wglGetPixelFormatAttribivARB");
+			has_gl_arb_functionality = (wgl_choose_pixel_format_arb && wgl_create_context_attribs_arb && wgl_get_pixel_format_attribfv_arb && wgl_get_pixel_format_attribiv_arb);
+
+			if(has_gl_arb_functionality) {
+				wgl_make_current(hdc, NULL);
+				wgl_delete_context(tmpCtx);
+				DestroyWindow(tmp);
+			}
+
+		}
+		
+
+		if(has_gl_arb_functionality) {
+
+			int formats[128];
+			UINT numFormats;
+			PIXELFORMATDESCRIPTOR pfd = { 0 };
+
+			int pixelformat_atribs[64] = {
+				WGL_DRAW_TO_WINDOW_ARB, 1,
+				WGL_SUPPORT_OPENGL_ARB, 1,
+				WGL_DOUBLE_BUFFER_ARB,  1,
+				WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
+				WGL_COLOR_BITS_ARB,     gl_spec->color_bits,
+				WGL_ALPHA_BITS_ARB,		gl_spec->alpha_bits,
+				WGL_DEPTH_BITS_ARB,     gl_spec->depth_bits,
+				WGL_STENCIL_BITS_ARB,   8,
+			};
+
+			if(gl_spec->has_multi_sampling) {
+				pixelformat_atribs[16] = WGL_SAMPLE_BUFFERS_ARB;
+				pixelformat_atribs[17] = gl_spec->has_multi_sampling;
+				pixelformat_atribs[18] = WGL_SAMPLES_ARB;
+				pixelformat_atribs[19] = gl_spec->num_multi_samples;
+			}
+
+			//wglChoosePixelFormat(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
+			BOOL res = wgl_choose_pixel_format_arb(dc, pixelformat_atribs, NULL, 128, formats, &numFormats);
+
+			UINT selected = 0;
+			if(res && numFormats) {
+				for(UINT i = 0; i < numFormats; i++) {
+					int ids[] = {
+						WGL_COLOR_BITS_ARB,
+						WGL_RED_BITS_ARB,
+						WGL_RED_BITS_ARB,
+						WGL_BLUE_BITS_ARB,
+						WGL_ALPHA_BITS_ARB,
+						WGL_DEPTH_BITS_ARB,
+						WGL_STENCIL_BITS_ARB,
+						WGL_SAMPLE_BUFFERS_ARB,
+						WGL_SAMPLES_ARB,
+					};
+					int values[9] = {0};
+					if(wgl_get_pixel_format_attribiv_arb(dc, formats[i], 0, 7, ids, values)) {
+
+						//printf("Format #%d: Color bits: %d, R: %dbits, G: %dbits, B: %dbits, A: %dbits, Depth: %dbits, Stencil: %dbits, Sample buffers: %d, Multi samples: %d\n",
+						//	i,
+						//	values[0],
+						//	values[1],
+						//	values[2],
+						//	values[3],
+						//	values[4],
+						//	values[5],
+						//	values[6],
+						//	values[7],
+						//	values[8]
+						//);
+
+						//printf("%d\n", GetLastError());
+					}
+				}
+			}
+
+			if(SetPixelFormat(dc, formats[selected], &pfd) == FALSE) {
+				printf("Failed to set pixel format! Error: %08x\n", GetLastError());
+			}
+
+			int context_attribs[] = {
+				WGL_CONTEXT_MAJOR_VERSION_ARB, gl_spec->major_version,
+				WGL_CONTEXT_MINOR_VERSION_ARB, gl_spec->major_version,
+				WGL_CONTEXT_PROFILE_MASK_ARB, 
+					gl_spec->is_backward_compatible ? 
+						WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : 
+						WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+				WGL_CONTEXT_FLAGS_ARB, 
+					(gl_spec->is_debug ? WGL_CONTEXT_DEBUG_BIT_ARB : 0) | 
+					(gl_spec->is_forward_compatible ? WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB : 0),
+				0
+			};
+
+			result->gl.context = wgl_create_context_attribs_arb(dc, NULL, context_attribs);
+			wgl_make_current(dc, result->gl.context);
+		}
 
 	}
 
@@ -722,6 +1057,12 @@ HINSTANCE smol_frame_get_win32_module_handle(smol_frame_t* frame) {
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {
+
+	if(frame->gl.context) {
+		wgl_make_current(GetDC(frame->frame_handle_win32), NULL);
+		wgl_delete_context(frame->gl.context);
+	}
+
 	SMOL_ASSERT(DestroyWindow(frame->frame_handle_win32));
 	smol_event_queue_destroy(&frame->event_queue);
 	SMOL_FREE(frame);
@@ -739,6 +1080,11 @@ void smol_frame_update(smol_frame_t* frame) {
 }
 
 int smol_frame_mapkey(WPARAM key, LPARAM ext);
+
+int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
+	if(!frame->gl.context) return 0;
+	return SwapBuffers(GetDC(frame->frame_handle_win32));
+}
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
