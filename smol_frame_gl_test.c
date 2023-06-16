@@ -194,6 +194,7 @@ int main() {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
+	glViewport(0, 0, 800, 600);
 	glClearColor(0.f, 0.f, 0.5f, 1.f);
 
 	GLuint uniform_angle_location = glGetUniformLocation(program, "uAngle");
@@ -206,7 +207,7 @@ int main() {
 		smol_frame_update(frame);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		float rot = (smol_timer() - start_time)*6.283/10.;
+		float rot = (smol_timer() - start_time)*6.283/30.;
 
 		glUseProgram(program);
 		glUniform1fv(uniform_angle_location, 1, &rot);
