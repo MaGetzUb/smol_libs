@@ -666,7 +666,7 @@ smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame) {
 #pragma region Win32 Implementation
 #if defined(SMOL_PLATFORM_WINDOWS)
 
-WNDCLASSEX wndClass;
+WNDCLASSEX smol__wnd_class;
 
 //Some OpenGL Stuff for windows:
 typedef HGLRC wgl_create_context_proc_t(HDC);
@@ -814,22 +814,22 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 	smol_frame_t* result = NULL;
 
 
-	if(wndClass.cbSize == 0) {
+	if(smol__wnd_class.cbSize == 0) {
 
-		wndClass.cbSize = sizeof(wndClass);
-		wndClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
-		wndClass.lpfnWndProc = &smol_frame_handle_event;
-		wndClass.cbClsExtra = 0;
-		wndClass.cbWndExtra = 0;
-		wndClass.hInstance = GetModuleHandle(0);
-		wndClass.hIcon = LoadIcon(NULL, IDI_WINLOGO);
-		wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-		wndClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-		wndClass.lpszMenuName = NULL;
-		wndClass.lpszClassName = TEXT("smol_frame");
-		wndClass.hIconSm = NULL;
+		smol__wnd_class.cbSize = sizeof(smol__wnd_class);
+		smol__wnd_class.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+		smol__wnd_class.lpfnWndProc = &smol_frame_handle_event;
+		smol__wnd_class.cbClsExtra = 0;
+		smol__wnd_class.cbWndExtra = 0;
+		smol__wnd_class.hInstance = GetModuleHandle(0);
+		smol__wnd_class.hIcon = LoadIcon(NULL, IDI_WINLOGO);
+		smol__wnd_class.hCursor = LoadCursor(NULL, IDC_ARROW);
+		smol__wnd_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+		smol__wnd_class.lpszMenuName = NULL;
+		smol__wnd_class.lpszClassName = TEXT("smol_frame");
+		smol__wnd_class.hIconSm = NULL;
 		
-		ATOM registerResult = RegisterClassEx(&wndClass);
+		ATOM registerResult = RegisterClassEx(&smol__wnd_class);
 		
 		SMOL_ASSERT("Window class initialization failed!" && registerResult);
 
@@ -873,7 +873,7 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 
 	wnd = CreateWindowEx(
 		0, 
-		wndClass.lpszClassName, 
+		smol__wnd_class.lpszClassName, 
 		title_text,
 		exStyle, 
 		winRect.left, 
@@ -882,14 +882,14 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 		winRect.bottom - winRect.top, 
 		config->parent ? config->parent->frame_handle_win32 : NULL, 
 		NULL, 
-		wndClass.hInstance,
+		smol__wnd_class.hInstance,
 		result
 	);
 
 	if(IsWindow(wnd) == TRUE) {
 
 		result->frame_handle_win32 = wnd;
-		result->module_handle_win32 = wndClass.hInstance;
+		result->module_handle_win32 = smol__wnd_class.hInstance;
 		result->event_queue = smol_event_queue_create(2048);
 
 	} else {
@@ -917,7 +917,7 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 			wgl_make_current = GetProcAddress(gl_module, "wglMakeCurrent");
 			wgl_get_proc_address = GetProcAddress(gl_module, "wglGetProcAddress");
 
-			HWND tmp = CreateWindowEx(NULL, wndClass.lpszClassName, L"", 0, 0, 0, 400, 300, NULL, NULL, wndClass.hInstance, NULL);
+			HWND tmp = CreateWindowEx(NULL, smol__wnd_class.lpszClassName, L"", 0, 0, 0, 400, 300, NULL, NULL, smol__wnd_class.hInstance, NULL);
 
 			HDC hdc = GetDC(tmp);
 
@@ -1879,11 +1879,13 @@ XChangeProperty(
 
 		int num_colormaps = XInstallColormap(display, color_map);
 
+		XFlush(display);
+
 		int context_attribs[] = {
 			GLX_CONTEXT_MAJOR_VERSION_ARB, spec->major_version,
 			GLX_CONTEXT_MINOR_VERSION_ARB, spec->minor_version,
 			GLX_CONTEXT_FLAGS_ARB, 
-				(spec->depth_bits ? GLX_CONTEXT_DEBUG_BIT_ARB : 0) |
+				(spec->is_debug ? GLX_CONTEXT_DEBUG_BIT_ARB : 0) |
 				(spec->is_forward_compatible ? GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB : 0),
 			GLX_CONTEXT_PROFILE_MASK_ARB, spec->is_backward_compatible ? 
 				GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : 
