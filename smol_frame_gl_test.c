@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define EXCLUDE_REDECLARED_FUNCTIONS
 #define GLBIND_IMPLEMENTATION
 #include "thirdparty/glbind.h"
 
@@ -20,6 +19,8 @@ const char vsh[] =
 	"\n"
 	"layout(location = 0) in vec2 aPos;\n"
 	"layout(location = 1) in vec3 aCol;\n"
+	"\n"
+	"uniform vec2 uAspect;\n"
 	"uniform float uAngle;\n"
 	"\n"
 	"out vec3 vCol;\n"
@@ -27,7 +28,7 @@ const char vsh[] =
 	"void main() {\n"
 	"	vCol = aCol;\n"
 	"   mat2 rot = mat2(cos(uAngle), sin(uAngle), sin(uAngle), -cos(uAngle));\n"
-	"	gl_Position = vec4(rot*aPos*vec2(1., 4./3.), 0.f, .5f);\n"
+	"	gl_Position = vec4((rot*aPos)*uAspect, 0.f, .5f);\n"
 	"}\n"
 ;
 
@@ -75,7 +76,7 @@ int main() {
 		.width = 800,
 		.height = 600,
 		.title = "Smol Frame :)",
-		.flags = SMOL_FRAME_DEFAULT_CONFIG,
+		.flags = SMOL_FRAME_CONFIG_IS_RESIZABLE | SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON | SMOL_FRAME_DEFAULT_CONFIG,
 		.gl_spec = &gl_spec
 	};
 
@@ -198,10 +199,14 @@ int main() {
 	glClearColor(0.f, 0.f, 0.5f, 1.f);
 
 	GLuint uniform_angle_location = glGetUniformLocation(program, "uAngle");
+	GLuint uniform_aspect_location = glGetUniformLocation(program, "uAspect");
 
 	puts("Mainloop begins...");
 
 	double start_time = smol_timer();
+
+	float aspect[] = { 1.f, 4.f / 3.f };
+
 
 	while(!smol_frame_is_closed(frame)) {
 		smol_frame_update(frame);
@@ -210,7 +215,17 @@ int main() {
 		float rot = (smol_timer() - start_time)*6.283/30.;
 
 		glUseProgram(program);
+		for(smol_frame_event_t ev; smol_frame_acquire_event(frame, &ev);) {
+			if(ev.type == SMOL_FRAME_EVENT_RESIZE) {
+				glViewport(0, 0, ev.size.width, ev.size.height);
+				aspect[0] = 1.f;
+				aspect[1] = (float)ev.size.width / ev.size.height;
+			}
+		}
+
+		
 		glUniform1fv(uniform_angle_location, 1, &rot);
+		glUniform2fv(uniform_aspect_location, 1, &aspect);
 		glBindVertexArray(vao);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 		glBindVertexArray(0);
