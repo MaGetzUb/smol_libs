@@ -807,10 +807,10 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 
 smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 
-	RECT winRect = { 0 };
+	RECT win_rect = { 0 };
 	HWND wnd = NULL;
 	POINT point = { 0 };
-	DWORD exStyle = WS_VISIBLE | WS_SYSMENU | WS_MINIMIZEBOX;
+	DWORD ex_style = WS_VISIBLE | WS_SYSMENU | WS_MINIMIZEBOX;
 	smol_frame_t* result = NULL;
 
 
@@ -843,18 +843,18 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 		HMONITOR monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
 		MONITORINFO monitorInfo = { sizeof(monitorInfo) };
 		if(GetMonitorInfo(monitor, &monitorInfo) != FALSE) {
-			winRect.left = ((monitorInfo.rcMonitor.left + monitorInfo.rcMonitor.right) - config->width) >> 1;
-			winRect.top = ((monitorInfo.rcMonitor.top + monitorInfo.rcMonitor.bottom) - config->height) >> 1;
-			winRect.right = winRect.left + config->width;
-			winRect.bottom = winRect.top + config->height;
+			win_rect.left = ((monitorInfo.rcMonitor.left + monitorInfo.rcMonitor.right) - config->width) >> 1;
+			win_rect.top = ((monitorInfo.rcMonitor.top + monitorInfo.rcMonitor.bottom) - config->height) >> 1;
+			win_rect.right = win_rect.left + config->width;
+			win_rect.bottom = win_rect.top + config->height;
 		}
 	}
 
-	if(config->flags & SMOL_FRAME_CONFIG_HAS_TITLEBAR) exStyle |= WS_CAPTION;
-	if(config->flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON) exStyle |= WS_MAXIMIZEBOX;
-	if(config->flags & SMOL_FRAME_CONFIG_IS_RESIZABLE) exStyle |= WS_SIZEBOX;
+	if(config->flags & SMOL_FRAME_CONFIG_HAS_TITLEBAR) ex_style |= WS_CAPTION;
+	if(config->flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON) ex_style |= WS_MAXIMIZEBOX;
+	if(config->flags & SMOL_FRAME_CONFIG_IS_RESIZABLE) ex_style |= WS_SIZEBOX;
 
-	AdjustWindowRect(&winRect, exStyle, FALSE);
+	AdjustWindowRect(&win_rect, ex_style, FALSE);
 
 	
 	result = SMOL_ALLOC_INSTANCE(smol_frame_t);
@@ -875,11 +875,11 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 		0, 
 		smol__wnd_class.lpszClassName, 
 		title_text,
-		exStyle, 
-		winRect.left, 
-		winRect.top, 
-		winRect.right - winRect.left, 
-		winRect.bottom - winRect.top, 
+		ex_style, 
+		win_rect.left, 
+		win_rect.top, 
+		win_rect.right - win_rect.left, 
+		win_rect.bottom - win_rect.top, 
 		config->parent ? config->parent->frame_handle_win32 : NULL, 
 		NULL, 
 		smol__wnd_class.hInstance,
@@ -1713,6 +1713,10 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 		ButtonMotionMask    | FocusChangeMask
 	);
 
+	/*
+	XCreateWindow(display, parent, x, y, width, height, border_width, depth, 
+                       class, visual, valuemask, attributes)
+	*/
 	result_window = XCreateWindow(
 		display, 
 		parentWindow, 
@@ -1722,7 +1726,7 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 		config->height, 
 		0,
 		CopyFromParent, 
-		CopyFromParent,
+		InputOutput,
 		CopyFromParent, 
 		CWEventMask | CWColormap, 
 		&setAttributes
@@ -1799,7 +1803,7 @@ XChangeProperty(
 
 		smol_frame_gl_spec_t* spec = config->gl_spec;
 		
-		int initialized = (glx_get_proc_address && glx_get_visual_from_fbconfig);
+		int initialized = (glx_get_proc_address && glx_get_visual_from_fbconfig && glx_choose_fbconfig && glx_swap_buffers && glx_create_context_attribs_arb);
 		if(!initialized) {
 			void* libgl = dlopen("libGL.so", RTLD_NOW);
 			if(libgl == NULL) libgl = dlopen("libGL.so.1", RTLD_NOW);
@@ -1829,6 +1833,7 @@ XChangeProperty(
 			GLX_DEPTH_SIZE, spec->depth_bits, //16, 17
 			GLX_STENCIL_SIZE, spec->stencil_bits, // 18, 19
 			GLX_DOUBLEBUFFER, 1, //20, 21
+			0, 0
 		};
 
 		/*
@@ -1889,7 +1894,8 @@ XChangeProperty(
 				(spec->is_forward_compatible ? GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB : 0),
 			GLX_CONTEXT_PROFILE_MASK_ARB, spec->is_backward_compatible ? 
 				GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : 
-				GLX_CONTEXT_CORE_PROFILE_BIT_ARB
+				GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+			0, 0
 		};
 
 		/*
