@@ -1,5 +1,5 @@
 /*
-Copyright © 2023 Marko Ranta (Discord: Coderunner#2271)
+Copyright © 2023 Marko Ranta (Discord: coderunner)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -118,9 +118,13 @@ Contributions:
 #		include <X11/XKBlib.h>
 #		include <X11/Xutil.h>
 #		include <X11/Xatom.h>
-#	endif 
-#	ifndef __gl_h
+#		ifndef GLX_VERSION_1_0
 typedef struct __GLXcontextRec *GLXContext;
+#		endif 
+#	endif 
+#	if defined(SMOL_FRAME_BACKEND_XCB) || defined(SMOL_FRAME_BACKEND_WAYLAND) 
+#		include <EGL/egl.h>
+#		include <EGL/eglext.h>
 #	endif 
 #elif defined(__APPLE__)
 #	ifndef SMOL_PLATFORM_MAX_OS
@@ -154,7 +158,7 @@ typedef struct _smol_frame_event_t smol_frame_event_t;
 // - unsigned int flags   -- behavioral hints for the window (is it resizable, does it support OpenGL etc)
 // - smol_frame_t* parent -- parent window for this window
 //Returns: smol_frame_t*  -- a handle to the newly created window
-smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config);
+smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config);
 
 //smol_frame_create - Creates a window
 //Arguments:
@@ -336,7 +340,9 @@ typedef struct _smol_frame_gl_spec_t {
 	int is_backward_compatible;
 	int is_forward_compatible;
 	int is_debug;
-	int color_bits; //Usually 24
+	int red_bits; //Usually 8
+	int green_bits; //Usually 8
+	int blue_bits; //Usually 8
 	int alpha_bits; //Usually 8
 	int depth_bits; //Usually 16, 24 or 32
 	int stencil_bits; //Usually 8
@@ -350,7 +356,7 @@ typedef struct _smol_frame_config_t {
 	const char* title;
 	unsigned int flags;
 	smol_frame_t* parent;
-	smol_frame_gl_spec_t* gl_spec;
+	const smol_frame_gl_spec_t* gl_spec;
 } smol_frame_config_t;
 
 //Keyboard event
@@ -483,9 +489,17 @@ typedef struct _smol_gl_context_t {
 	HGLRC context;
 } smol_gl_context_t;
 #elif defined(SMOL_PLATFORM_LINUX)
+#	if defined(SMOL_FRAME_BACKEND_XCB) || defined(SMOL_FRAME_BACKEND_WAYLAND) 
+typedef struct _smol_gl_context_t {
+	EGLDisplay display;
+	EGLSurface surface;
+	EGLContext context;
+};
+#else 
 typedef struct _smol_gl_context_t {
 	GLXContext context;
 };
+#endif 
 #endif 
 
 typedef struct _smol_frame_t {
@@ -792,20 +806,20 @@ typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat,
 #define GL_SAMPLE_COVERAGE_INVERT_ARB           0x80AB
 
 
-wgl_create_context_proc_t *wgl_create_context = NULL;
-wgl_delete_context_proct_t* wgl_delete_context = NULL;
-wgl_make_current_proc_t* wgl_make_current = NULL;
-wgl_get_proc_address_proc_t* wgl_get_proc_address = NULL;
+wgl_create_context_proc_t *smol_wglCreateContext = NULL;
+wgl_delete_context_proct_t* smol_wglDeleteContext = NULL;
+wgl_make_current_proc_t* smol_wglMakeCurrent = NULL;
+wgl_get_proc_address_proc_t* smol_wglGetProcAddress = NULL;
 
-wgl_create_context_attribs_arb_proc_t* wgl_create_context_attribs_arb = NULL;
+wgl_create_context_attribs_arb_proc_t* smol_wglCreateContextAttribsARB = NULL;
 
-wgl_get_pixel_format_attribfv_arb_proc_t* wgl_get_pixel_format_attribfv_arb = NULL;
-wgl_get_pixel_format_attribiv_arb_proc_t* wgl_get_pixel_format_attribiv_arb = NULL;
-wgl_choose_pixel_format_arb_proc_t* wgl_choose_pixel_format_arb = NULL;
+wgl_get_pixel_format_attribfv_arb_proc_t* smol_wglGetPixelFormatAttribfvARB = NULL;
+wgl_get_pixel_format_attribiv_arb_proc_t* smol_wglGetPixelFormatAttribivARB = NULL;
+wgl_choose_pixel_format_arb_proc_t* smol_wglChoosePixelFormatARB = NULL;
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
+smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 	RECT win_rect = { 0 };
 	HWND wnd = NULL;
@@ -906,16 +920,16 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 		HDC dc = GetDC(wnd);
 		smol_frame_gl_spec_t* gl_spec = config->gl_spec;
 		
-		int has_gl_arb_functionality = (wgl_choose_pixel_format_arb && wgl_create_context_attribs_arb && wgl_get_pixel_format_attribfv_arb && wgl_get_pixel_format_attribiv_arb);
+		int has_gl_arb_functionality = (smol_wglChoosePixelFormatARB && smol_wglCreateContextAttribsARB && smol_wglGetPixelFormatAttribfvARB && smol_wglGetPixelFormatAttribivARB);
 
 		if(!has_gl_arb_functionality) {
 
 			HMODULE gl_module = LoadLibrary(TEXT("opengl32.dll"));
 
-			wgl_create_context = GetProcAddress(gl_module, "wglCreateContext");
-			wgl_delete_context = GetProcAddress(gl_module, "wglDeleteContext");
-			wgl_make_current = GetProcAddress(gl_module, "wglMakeCurrent");
-			wgl_get_proc_address = GetProcAddress(gl_module, "wglGetProcAddress");
+			smol_wglCreateContext = GetProcAddress(gl_module, "wglCreateContext");
+			smol_wglDeleteContext = GetProcAddress(gl_module, "wglDeleteContext");
+			smol_wglMakeCurrent = GetProcAddress(gl_module, "wglMakeCurrent");
+			smol_wglGetProcAddress = GetProcAddress(gl_module, "wglGetProcAddress");
 
 			HWND tmp = CreateWindowEx(NULL, smol__wnd_class.lpszClassName, L"", 0, 0, 0, 400, 300, NULL, NULL, smol__wnd_class.hInstance, NULL);
 
@@ -935,18 +949,18 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 
 			SetPixelFormat(hdc, pixelFormat, &pfd);
 
-			HGLRC tmpCtx = wgl_create_context(hdc);
-			wgl_make_current(hdc, tmpCtx);
+			HGLRC tmpCtx = smol_wglCreateContext(hdc);
+			smol_wglMakeCurrent(hdc, tmpCtx);
 
-			wgl_create_context_attribs_arb = (wgl_create_context_attribs_arb_proc_t*)wgl_get_proc_address("wglCreateContextAttribsARB");
-			wgl_choose_pixel_format_arb = (wgl_choose_pixel_format_arb_proc_t*)wgl_get_proc_address("wglChoosePixelFormatARB");
-			wgl_get_pixel_format_attribfv_arb = (wgl_get_pixel_format_attribfv_arb_proc_t*)wgl_get_proc_address("wglGetPixelFormatAttribfvARB");
-			wgl_get_pixel_format_attribiv_arb = (wgl_get_pixel_format_attribiv_arb_proc_t*)wgl_get_proc_address("wglGetPixelFormatAttribivARB");
-			has_gl_arb_functionality = (wgl_choose_pixel_format_arb && wgl_create_context_attribs_arb && wgl_get_pixel_format_attribfv_arb && wgl_get_pixel_format_attribiv_arb);
+			smol_wglCreateContextAttribsARB = (wgl_create_context_attribs_arb_proc_t*)smol_wglGetProcAddress("wglCreateContextAttribsARB");
+			smol_wglChoosePixelFormatARB = (wgl_choose_pixel_format_arb_proc_t*)smol_wglGetProcAddress("wglChoosePixelFormatARB");
+			smol_wglGetPixelFormatAttribfvARB = (wgl_get_pixel_format_attribfv_arb_proc_t*)smol_wglGetProcAddress("wglGetPixelFormatAttribfvARB");
+			smol_wglGetPixelFormatAttribivARB = (wgl_get_pixel_format_attribiv_arb_proc_t*)smol_wglGetProcAddress("wglGetPixelFormatAttribivARB");
+			has_gl_arb_functionality = (smol_wglChoosePixelFormatARB && smol_wglCreateContextAttribsARB && smol_wglGetPixelFormatAttribfvARB && smol_wglGetPixelFormatAttribivARB);
 
 			if(has_gl_arb_functionality) {
-				wgl_make_current(hdc, NULL);
-				wgl_delete_context(tmpCtx);
+				smol_wglMakeCurrent(hdc, NULL);
+				smol_wglDeleteContext(tmpCtx);
 				DestroyWindow(tmp);
 			}
 
@@ -965,8 +979,11 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 				WGL_DRAW_TO_WINDOW_ARB, 1,
 				WGL_DOUBLE_BUFFER_ARB,  1,
 				WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
-				WGL_COLOR_BITS_ARB,     gl_spec->color_bits,
-				WGL_ALPHA_BITS_ARB,		gl_spec->alpha_bits,
+				WGL_COLOR_BITS_ARB,     gl_spec->red_bits + gl_spec->green_bits + gl_spec->blue_bits,
+				WGL_RED_BITS_ARB,       gl_spec->red_bits,
+				WGL_GREEN_BITS_ARB,     gl_spec->green_bits,
+				WGL_BLUE_BITS_ARB,      gl_spec->blue_bits,
+				WGL_ALPHA_BITS_ARB,     gl_spec->alpha_bits,
 				WGL_DEPTH_BITS_ARB,     gl_spec->depth_bits,
 				WGL_STENCIL_BITS_ARB,   gl_spec->stencil_bits,
 				WGL_SAMPLE_BUFFERS_ARB, gl_spec->has_multi_sampling
@@ -974,7 +991,7 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 			
 
 			//wglChoosePixelFormat(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
-			BOOL res = wgl_choose_pixel_format_arb(dc, pixelformat_atribs, NULL, 64, formats, &numFormats);
+			BOOL res = smol_wglChoosePixelFormatARB(dc, pixelformat_atribs, NULL, 64, formats, &numFormats);
 
 			UINT selected = 0;
 			int samples_diff = 999;
@@ -986,7 +1003,7 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 						WGL_SAMPLES_ARB,
 					};
 					int values[2] = {0};
-					BOOL has_feature = wgl_get_pixel_format_attribiv_arb(dc, formats[i], 0, 7, ids, values);
+					BOOL has_feature = smol_wglGetPixelFormatAttribivARB(dc, formats[i], 0, 2, ids, values);
 					
 					int diff = values[1] - gl_spec->num_multi_samples;
 					if(diff < 0) diff = -diff;
@@ -1024,8 +1041,8 @@ smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
 				0
 			};
 
-			result->gl.context = wgl_create_context_attribs_arb(dc, NULL, context_attribs);
-			wgl_make_current(dc, result->gl.context);
+			result->gl.context = smol_wglCreateContextAttribsARB(dc, NULL, context_attribs);
+			smol_wglMakeCurrent(dc, result->gl.context);
 		}
 
 	}
@@ -1056,8 +1073,8 @@ HINSTANCE smol_frame_get_win32_module_handle(smol_frame_t* frame) {
 void smol_frame_destroy(smol_frame_t* frame) {
 
 	if(frame->gl.context) {
-		wgl_make_current(GetDC(frame->frame_handle_win32), NULL);
-		wgl_delete_context(frame->gl.context);
+		smol_wglMakeCurrent(GetDC(frame->frame_handle_win32), NULL);
+		smol_wglDeleteContext(frame->gl.context);
 	}
 
 	SMOL_ASSERT(DestroyWindow(frame->frame_handle_win32));
@@ -1676,7 +1693,7 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 	return renderer;
 }
 
-smol_frame_t* smol_frame_create_advanced(smol_frame_config_t* config) {
+smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 	//TODO: Window parenting
 	
@@ -1793,6 +1810,7 @@ XChangeProperty(
 	result->height = config->height;
 	result->ic = ic;
 	result->im = im;
+	result->renderer = NULL;
 
 	XChangeProperty(display, result_window, smol__frame_handle_atom, XA_STRING, 8, PropertyChangeMask, (const unsigned char*)&result, sizeof(smol_frame_t*));
 	XFlush(display);
@@ -1826,9 +1844,9 @@ XChangeProperty(
 			GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT, //2, 3
 			GLX_RENDER_TYPE, GLX_RGBA_BIT, //4, 5
 			GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR, //6, 7
-			GLX_RED_SIZE, spec->color_bits/3, //8, 9
-			GLX_GREEN_SIZE, spec->color_bits/3, //10, 11
-			GLX_BLUE_SIZE, spec->color_bits/3, //12, 13
+			GLX_RED_SIZE, spec->red_bits, //8, 9
+			GLX_GREEN_SIZE, spec->green_bits, //10, 11
+			GLX_BLUE_SIZE, spec->blue_bits, //12, 13
 			GLX_ALPHA_SIZE, spec->alpha_bits, //14, 15
 			GLX_DEPTH_SIZE, spec->depth_bits, //16, 17
 			GLX_STENCIL_SIZE, spec->stencil_bits, // 18, 19
@@ -1980,7 +1998,7 @@ void smol_frame_update(smol_frame_t* frame) {
 				event.size.width = xevent.xexpose.width;
 				event.size.height = xevent.xexpose.height;
 
-				if(frame->width != xevent.xexpose.width && frame->height != xevent.xexpose.height) {
+				if(frame->width != xevent.xexpose.width && frame->height != xevent.xexpose.height && frame->renderer) {
 					frame->renderer = smol_renderer_create(frame);
 				} 
 
@@ -2222,9 +2240,31 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 	return renderer;
 }
 
-smol_frame_t* smol_frame_create_advanced(int width, int height, const char* title, unsigned int flags, smol_frame_t* parent) {
+const char* egl_error(EGLint error) {
+	switch(error) {
+		case EGL_SUCCESS:             return "EGL_SUCCESS - The last function succeeded without error.";
+		case EGL_NOT_INITIALIZED:     return "EGL_NOT_INITIALIZED - EGL is not initialized, or could not be initialized, for the specified EGL display connection.";
+		case EGL_BAD_ACCESS:          return "EGL_BAD_ACCESS - EGL cannot access a requested resource (for example a context is bound in another thread).";
+		case EGL_BAD_ALLOC:           return "EGL_BAD_ALLOC - EGL failed to allocate resources for the requested operation.";
+		case EGL_BAD_ATTRIBUTE:       return "EGL_BAD_ATTRIBUTE - An unrecognized attribute or attribute value was passed in the attribute list.";
+		case EGL_BAD_CONTEXT:         return "EGL_BAD_CONTEXT - An EGLContext argument does not name a valid EGL rendering context.";
+		case EGL_BAD_CONFIG:          return "EGL_BAD_CONFIG - An EGLConfig argument does not name a valid EGL frame buffer configuration.";
+		case EGL_BAD_CURRENT_SURFACE: return "EGL_BAD_CURRENT_SURFACE - The current surface of the calling thread is a window, pixel buffer or pixmap that is no longer valid.";
+		case EGL_BAD_DISPLAY:         return "EGL_BAD_DISPLAY - An EGLDisplay argument does not name a valid EGL display connection.";
+		case EGL_BAD_SURFACE:         return "EGL_BAD_SURFACE - An EGLSurface argument does not name a valid surface (window, pixel buffer or pixmap) configured for GL rendering.";
+		case EGL_BAD_MATCH:           return "EGL_BAD_MATCH - Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).";
+		case EGL_BAD_PARAMETER:       return "EGL_BAD_PARAMETER - One or more argument values are invalid.";
+		case EGL_BAD_NATIVE_PIXMAP:   return "EGL_BAD_NATIVE_PIXMAP - A NativePixmapType argument does not refer to a valid native pixmap.";
+		case EGL_BAD_NATIVE_WINDOW:   return "EGL_BAD_NATIVE_WINDOW - A NativeWindowType argument does not refer to a valid native window.";
+		case EGL_CONTEXT_LOST: 		  return "EGL_CONTEXT_LOST - A power management event has occurred. The application must destroy all contexts and reinitialise OpenGL ES state and objects to continue rendering.";
+	}
+	return "";
+}
 
-	xcb_connection_t* connection = xcb_connect(NULL, NULL);
+smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
+
+	int screen_id;
+	xcb_connection_t* connection = xcb_connect(NULL, &screen_id);
 
 	int error = xcb_connection_has_error(connection);
 	SMOL_ASSERT("Couldn't form a connection to X-server!" && (error == 0));
@@ -2253,27 +2293,37 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		XCB_EVENT_MASK_STRUCTURE_NOTIFY
 	);
 
-	xcb_create_window(
-		connection, 
-		XCB_COPY_FROM_PARENT, 
-		window, 
-		screen->root, 
-		(screen->width_in_pixels + width) >> 1, 
-		(screen->height_in_pixels + height) >> 1, 
-		width, 
-		height, 
-		0, 
-		XCB_WINDOW_CLASS_INPUT_OUTPUT, 
-		screen->root_visual, 
-		XCB_CW_EVENT_MASK, 
-		&event_mask
-	);
+	uint32_t colormap = 0;
 
+	uint32_t values[] = {event_mask, screen->default_colormap, 0};
 
-	if(!(flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON)) {
+	{
+		xcb_void_cookie_t cookie = xcb_create_window(
+			connection, 
+			XCB_COPY_FROM_PARENT, 
+			window, 
+			screen->root, 
+			(screen->width_in_pixels + config->width) >> 1, 
+			(screen->height_in_pixels + config->height) >> 1, 
+			config->width, 
+			config->height,
+			0, 
+			XCB_WINDOW_CLASS_INPUT_OUTPUT, 
+			XCB_COPY_FROM_PARENT, 
+			XCB_CW_EVENT_MASK | XCB_CW_COLORMAP, 
+			values
+		);
+
+		xcb_generic_error_t* error = xcb_request_check(connection, cookie);
+		if(error) {
+			printf("Error code: %d\n", error->error_code);
+		}
+	}
+
+	if(!(config->flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON)) {
 		xcb_size_hints_t size_hints = {0};
-		xcb_icccm_size_hints_set_min_size(&size_hints, width, height);
-		xcb_icccm_size_hints_set_max_size(&size_hints, width, height);
+		xcb_icccm_size_hints_set_min_size(&size_hints, config->width, config->height);
+		xcb_icccm_size_hints_set_max_size(&size_hints, config->width, config->height);
 
 		xcb_void_cookie_t cookie = xcb_change_property(
 			connection,                 
@@ -2322,8 +2372,8 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 		XCB_ATOM_WM_NAME, 
 		XCB_ATOM_STRING, 
 		8, 
-		strlen(title), 
-		(const void*)title
+		strlen(config->title), 
+		(const void*)config->title
 	);
 
 	xcb_map_window(connection, window);
@@ -2364,20 +2414,182 @@ smol_frame_t* smol_frame_create_advanced(int width, int height, const char* titl
 	memset(result, 0, sizeof(smol_frame_t));
 	result->display_server_connection = connection;
 	result->event_queue = smol_event_queue_create(2048);
-	result->width = width;
-	result->height = height;
+	result->width = config->width;
+	result->height = config->height;
 	result->screen = screen;
 	result->frame_window = window;
 	result->kbcontext = kbcontext;
 	result->kbkeymap = kbkeymap;
 	result->kbstate = kbstate;
-	result->renderer = smol_renderer_create(result);
+	result->renderer = NULL;
 
 	if(smol__num_frames == 0) {
 		smol__keysyms = xcb_key_symbols_alloc(connection);
 	}
 	smol__num_frames++;
 
+	if(!config->gl_spec) {
+		result->renderer = smol_renderer_create(result);
+	} else {
+
+		smol_frame_gl_spec_t* spec = config->gl_spec;
+
+		const char* exts = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+		const char* strstr_res = strstr(exts, "EGL_EXT_platform_xcb");
+		
+		{
+			for(
+				char* cur = exts,* next = NULL; 
+				cur && (next  = strchr(cur, ' ')); 
+				cur = next+1
+			) {
+				printf("%.*s\n", (int)(next - cur), cur);
+			}
+		}
+		
+		if(!strstr_res) {
+			puts("No extension present 'EGL_EXT_platform_xcb'!");
+		}
+
+#define EGL_ASSERT \
+		{ \
+			EGLint error = eglGetError(); \
+			if(error != EGL_SUCCESS) {  \
+				printf("%s\n", egl_error(error)); \
+				SMOL_ASSERT(0); \
+			} \
+		}; (void)0
+
+
+		PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT = (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
+
+		EGLDisplay egl_display = NULL;
+
+		EGLint args[] = {
+			EGL_PLATFORM_XCB_SCREEN_EXT,
+			screen_id,
+			EGL_NONE
+		};
+		
+		egl_display = eglGetPlatformDisplayEXT(EGL_PLATFORM_XCB_EXT, connection, args);
+		//egl_display = eglGetDisplay((EGLNativeDisplayType)connection);
+		//egl_display = eglGetDisplay((EGLNativeDisplayType)NULL);
+		EGL_ASSERT;
+
+		EGLint major, minor;
+		if(eglInitialize(egl_display, &major, &minor) != EGL_SUCCESS) {
+			switch(eglGetError()) {
+				case EGL_BAD_DISPLAY:
+					puts("EGL_BAD_DISPLAY");
+				break;
+				case EGL_NOT_INITIALIZED:
+					puts("EGL_NOT_INITIALIZED");
+				break;
+			}
+			printf("Unable to initialize EGL!\n");
+		}
+		printf("EGL version: %d.%d\n", major, minor);
+		//EGLDisplay egl_display = eglGetPlatformDisplayEXT((EGLNativeDisplayType)connection);
+
+		EGLConfig egl_configs[128] = { 0 };
+		EGLint num_configs = 0;
+		EGLint attributes[64] = {
+			EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+			EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+			EGL_RED_SIZE, spec->red_bits,
+			EGL_GREEN_SIZE, spec->green_bits,
+			EGL_BLUE_SIZE, spec->blue_bits,
+			EGL_ALPHA_SIZE, spec->alpha_bits,
+			EGL_DEPTH_SIZE, spec->depth_bits,
+			EGL_STENCIL_SIZE, spec->stencil_bits,
+			EGL_NONE
+		};
+
+		if(!eglChooseConfig(egl_display, attributes, egl_configs, 128, &num_configs)) {
+			printf("Failed to get configs!");
+		}
+
+		int best_config = 0;
+		int max_diff = 999;
+		{
+			for(int i = 0; i < num_configs; i++) {
+				EGLConfig egl_config = egl_configs[i];
+				EGLint has_sample_buffers;
+				eglGetConfigAttrib(egl_display, egl_config, EGL_SAMPLE_BUFFERS, &has_sample_buffers);
+				if(has_sample_buffers) {
+					EGLint num_samples;
+					eglGetConfigAttrib(egl_display, egl_config, EGL_SAMPLES, &num_samples);
+
+					int diff = spec->num_multi_samples - num_samples;
+					if(diff < 0) diff = -diff;
+
+					if(diff < max_diff) {
+						best_config = i;
+						max_diff = diff;
+					}
+
+				}
+			}
+		}
+
+		xcb_visualid_t visual_id;
+		eglGetConfigAttrib(connection, egl_configs[best_config], EGL_NATIVE_VISUAL_ID, (EGLint *)&visual_id);
+		
+		int color_map = xcb_generate_id(connection);
+
+		xcb_void_cookie_t cookie;
+
+		cookie = xcb_create_colormap_checked(connection, XCB_COLORMAP_ALLOC_NONE, color_map, screen->root, visual_id);
+		{
+			xcb_generic_error_t* error = xcb_request_check(connection, cookie);
+			if(error) {
+				printf("XCB error!\n\tError Code: %d\n\tMajor: %d\n\tMinor: %d\n", error->error_code, error->major_code, error -> minor_code);
+			}
+		}
+
+		cookie = xcb_install_colormap(connection, color_map);
+		{
+			xcb_generic_error_t* error = xcb_request_check(connection, cookie);
+			if(error) {
+				printf("XCB error!\n Error Code: %d\nMajor: %d\nMinor: %d\n", error->error_code, error->major_code, error -> minor_code);
+			}
+		}
+
+		eglBindAPI(EGL_OPENGL_API);
+		EGL_ASSERT;
+		
+		EGLSurface egl_surface = eglCreatePlatformWindowSurface(egl_display, egl_configs[best_config], &window, NULL);
+		EGL_ASSERT;
+
+		EGLint context_attributes[] = {
+			EGL_CONTEXT_MAJOR_VERSION, spec->major_version,
+			EGL_CONTEXT_MINOR_VERSION, spec->minor_version,
+			EGL_CONTEXT_OPENGL_PROFILE_MASK, spec->is_backward_compatible ?
+				EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT : 
+				EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+			EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE, spec->is_forward_compatible ? 
+				EGL_TRUE : 
+				EGL_FALSE,
+			EGL_CONTEXT_OPENGL_DEBUG, spec->is_debug ? 
+				EGL_TRUE : 
+				EGL_FALSE,
+			EGL_NONE
+		};
+
+		EGLContext egl_context = eglCreateContext(egl_display, egl_configs[best_config], EGL_NO_CONTEXT, context_attributes);
+		EGL_ASSERT;
+
+		{
+			EGLBoolean result = eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+			if(result != EGL_SUCCESS) {
+				EGL_ASSERT;
+			}
+		}
+
+		result->gl.display = egl_display;
+		result->gl.context = egl_context;
+		result->gl.surface = egl_surface;
+	}
 	return result;
 
 }
@@ -2394,6 +2606,11 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 		(const void*)title
 	);
 	xcb_flush(frame->display_server_connection);
+}
+
+int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
+	if(!frame) return 0;
+	return eglSwapBuffers(frame->gl.display, frame->gl.surface);
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {
