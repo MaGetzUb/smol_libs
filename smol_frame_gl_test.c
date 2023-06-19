@@ -2,9 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#pragma GCC diagnostic ignored "-Wmissing-braces"
+
 #define GLBIND_IMPLEMENTATION
 #include "thirdparty/glbind.h"
 
+#define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
@@ -15,7 +18,7 @@
 
 const char vsh[] =
 	"#version 330\n"
-	"#line 12\n"
+	"#line " SMOL_STRINGIFY(__LINE__) "\n"
 	"\n"
 	"layout(location = 0) in vec2 aPos;\n"
 	"layout(location = 1) in vec3 aCol;\n"
@@ -34,7 +37,7 @@ const char vsh[] =
 
 const char fsh[] =
 	"#version 330\n"
-	"#line 30\n"
+	"#line " SMOL_STRINGIFY(__LINE__) "\n"
 	"\n"
 	"layout(location = 0) out vec4 ResultColor;\n"
 	"\n"
@@ -63,7 +66,9 @@ int main() {
 		.minor_version = 3,
 		.is_backward_compatible = 0,
 		.is_forward_compatible = 0,
-		.color_bits = 24,
+		.red_bits = 8,
+		.green_bits = 8,
+		.blue_bits = 8,
 		.alpha_bits = 8,
 		.depth_bits = 24,
 		.stencil_bits = 8,
@@ -80,11 +85,11 @@ int main() {
 		.gl_spec = &gl_spec
 	};
 
-	glEnable(GL_MULTISAMPLE);
 
 	smol_frame_t* frame = smol_frame_create_advanced(&frame_config);
 
 
+	glEnable(GL_MULTISAMPLE);
 	puts(glGetString(GL_VERSION));
 
 	int majo, mino;
@@ -235,7 +240,7 @@ int main() {
 	}
 
 	glDeleteVertexArrays(1, &vao);
-	glDeleteBuffers(1, &vbData);
+	glDeleteBuffers(1, &vertexData);
 	glDeleteProgram(program);
 
 	smol_frame_destroy(frame);
