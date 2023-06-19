@@ -2205,6 +2205,8 @@ void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	SMOL_FREE(renderer);
 }
 
+
+
 //Creates and recreates renderer
 smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 
@@ -2242,24 +2244,37 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 
 const char* egl_error(EGLint error) {
 	switch(error) {
-		case EGL_SUCCESS:             return "EGL_SUCCESS - The last function succeeded without error.";
-		case EGL_NOT_INITIALIZED:     return "EGL_NOT_INITIALIZED - EGL is not initialized, or could not be initialized, for the specified EGL display connection.";
-		case EGL_BAD_ACCESS:          return "EGL_BAD_ACCESS - EGL cannot access a requested resource (for example a context is bound in another thread).";
-		case EGL_BAD_ALLOC:           return "EGL_BAD_ALLOC - EGL failed to allocate resources for the requested operation.";
-		case EGL_BAD_ATTRIBUTE:       return "EGL_BAD_ATTRIBUTE - An unrecognized attribute or attribute value was passed in the attribute list.";
-		case EGL_BAD_CONTEXT:         return "EGL_BAD_CONTEXT - An EGLContext argument does not name a valid EGL rendering context.";
-		case EGL_BAD_CONFIG:          return "EGL_BAD_CONFIG - An EGLConfig argument does not name a valid EGL frame buffer configuration.";
-		case EGL_BAD_CURRENT_SURFACE: return "EGL_BAD_CURRENT_SURFACE - The current surface of the calling thread is a window, pixel buffer or pixmap that is no longer valid.";
-		case EGL_BAD_DISPLAY:         return "EGL_BAD_DISPLAY - An EGLDisplay argument does not name a valid EGL display connection.";
-		case EGL_BAD_SURFACE:         return "EGL_BAD_SURFACE - An EGLSurface argument does not name a valid surface (window, pixel buffer or pixmap) configured for GL rendering.";
-		case EGL_BAD_MATCH:           return "EGL_BAD_MATCH - Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).";
-		case EGL_BAD_PARAMETER:       return "EGL_BAD_PARAMETER - One or more argument values are invalid.";
-		case EGL_BAD_NATIVE_PIXMAP:   return "EGL_BAD_NATIVE_PIXMAP - A NativePixmapType argument does not refer to a valid native pixmap.";
-		case EGL_BAD_NATIVE_WINDOW:   return "EGL_BAD_NATIVE_WINDOW - A NativeWindowType argument does not refer to a valid native window.";
-		case EGL_CONTEXT_LOST: 		  return "EGL_CONTEXT_LOST - A power management event has occurred. The application must destroy all contexts and reinitialise OpenGL ES state and objects to continue rendering.";
+		case EGL_SUCCESS:             return "EGL_SUCCESS";
+		case EGL_NOT_INITIALIZED:     return "EGL_NOT_INITIALIZED";
+		case EGL_BAD_ACCESS:          return "EGL_BAD_ACCESS";
+		case EGL_BAD_ALLOC:           return "EGL_BAD_ALLOC";
+		case EGL_BAD_ATTRIBUTE:       return "EGL_BAD_ATTRIBUTE";
+		case EGL_BAD_CONTEXT:         return "EGL_BAD_CONTEXT";
+		case EGL_BAD_CONFIG:          return "EGL_BAD_CONFIG";
+		case EGL_BAD_CURRENT_SURFACE: return "EGL_BAD_CURRENT_SURFACE";
+		case EGL_BAD_DISPLAY:         return "EGL_BAD_DISPLAY";
+		case EGL_BAD_SURFACE:         return "EGL_BAD_SURFACE";
+		case EGL_BAD_MATCH:           return "EGL_BAD_MATCH";
+		case EGL_BAD_PARAMETER:       return "EGL_BAD_PARAMETER";
+		case EGL_BAD_NATIVE_PIXMAP:   return "EGL_BAD_NATIVE_PIXMAP";
+		case EGL_BAD_NATIVE_WINDOW:   return "EGL_BAD_NATIVE_WINDOW";
+		case EGL_CONTEXT_LOST: 		  return "EGL_CONTEXT_LOST";
 	}
 	return "";
 }
+
+#ifdef __egl_h_
+void eg_debug_proc(EGLenum error, const char *command, EGLint messageType, EGLLabelKHR threadLabel, EGLLabelKHR objectLabel, const char* message) {
+	if(
+		(messageType == EGL_DEBUG_MSG_CRITICAL_KHR) || 
+		(messageType == EGL_DEBUG_MSG_ERROR_KHR)
+	) {
+		puts((messageType == EGL_DEBUG_MSG_CRITICAL_KHR) ? "CRITICAL EGL ERROR!" : "NON-CRITICAL EGL ERROR!");
+		printf("EGL error: %s\nCommand: %s\nMessage: %s\n", egl_error(error), command, message);
+		SMOL_BREAKPOINT();
+	}
+}
+#endif 
 
 smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
@@ -2435,9 +2450,10 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		smol_frame_gl_spec_t* spec = config->gl_spec;
 
 		const char* exts = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
-		const char* strstr_res = strstr(exts, "EGL_EXT_platform_xcb");
+		const char* has_egl_ext_platform_xcb = strstr(exts, "EGL_EXT_platform_xcb");
+		const char* has_egl_khr_debug = strstr(exts, "EGL_KHR_debug");
 		
-		{
+		/*{
 			for(
 				char* cur = exts,* next = NULL; 
 				cur && (next  = strchr(cur, ' ')); 
@@ -2445,12 +2461,18 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 			) {
 				printf("%.*s\n", (int)(next - cur), cur);
 			}
-		}
+		}*/
 		
-		if(!strstr_res) {
+		if(!has_egl_khr_debug) {
+			puts("No extension present 'EGL_KHR_debug'!");
+		}
+
+		if(!has_egl_ext_platform_xcb) {
 			puts("No extension present 'EGL_EXT_platform_xcb'!");
 		}
 
+
+/*
 #define EGL_ASSERT \
 		{ \
 			EGLint error = eglGetError(); \
@@ -2459,10 +2481,14 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 				SMOL_ASSERT(0); \
 			} \
 		}; (void)0
-
+*/
+#define EGL_ASSERT
 
 		PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT = (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
-
+		PFNEGLDEBUGMESSAGECONTROLKHRPROC eglDebugMessageControlKHR = (PFNEGLDEBUGMESSAGECONTROLKHRPROC)eglGetProcAddress("eglDebugMessageControlKHR");
+		
+		eglDebugMessageControlKHR(eg_debug_proc, NULL);
+		
 		EGLDisplay egl_display = NULL;
 
 		EGLint args[] = {
@@ -2477,17 +2503,9 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		EGL_ASSERT;
 
 		EGLint major, minor;
-		if(eglInitialize(egl_display, &major, &minor) != EGL_SUCCESS) {
-			switch(eglGetError()) {
-				case EGL_BAD_DISPLAY:
-					puts("EGL_BAD_DISPLAY");
-				break;
-				case EGL_NOT_INITIALIZED:
-					puts("EGL_NOT_INITIALIZED");
-				break;
-			}
-			printf("Unable to initialize EGL!\n");
-		}
+		eglInitialize(egl_display, &major, &minor);
+		EGL_ASSERT;
+		
 		printf("EGL version: %d.%d\n", major, minor);
 		//EGLDisplay egl_display = eglGetPlatformDisplayEXT((EGLNativeDisplayType)connection);
 
@@ -2533,7 +2551,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		}
 
 		xcb_visualid_t visual_id;
-		eglGetConfigAttrib(connection, egl_configs[best_config], EGL_NATIVE_VISUAL_ID, (EGLint *)&visual_id);
+		eglGetConfigAttrib(egl_display, egl_configs[best_config], EGL_NATIVE_VISUAL_ID, (EGLint *)&visual_id);
 		
 		int color_map = xcb_generate_id(connection);
 
@@ -2555,10 +2573,10 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 			}
 		}
 
-		eglBindAPI(EGL_OPENGL_API);
-		EGL_ASSERT;
-		
-		EGLSurface egl_surface = eglCreatePlatformWindowSurface(egl_display, egl_configs[best_config], &window, NULL);
+		EGLBoolean bind_result = eglBindAPI(EGL_OPENGL_API);
+		if(bind_result != EGL_TRUE) {
+			printf("API binding failed!\n");
+		}
 		EGL_ASSERT;
 
 		EGLint context_attributes[] = {
@@ -2576,15 +2594,18 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 			EGL_NONE
 		};
 
+	
 		EGLContext egl_context = eglCreateContext(egl_display, egl_configs[best_config], EGL_NO_CONTEXT, context_attributes);
 		EGL_ASSERT;
+	
+		EGLSurface egl_surface = eglCreatePlatformWindowSurface(egl_display, egl_configs[best_config], &window, NULL);
+		EGL_ASSERT;
 
-		{
-			EGLBoolean result = eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
-			if(result != EGL_SUCCESS) {
-				EGL_ASSERT;
-			}
-		}
+
+
+		
+		eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+
 
 		result->gl.display = egl_display;
 		result->gl.context = egl_context;
