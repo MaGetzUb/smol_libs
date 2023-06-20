@@ -1804,7 +1804,7 @@ typedef GLXContext smol_glXCreateContextAttribsARB_proc(Display *dpy, GLXFBConfi
 
 smol_glXGetVisualFromFBConfig_proc* smol_glXGetVisualFromFBConfig = NULL;
 smol_glXMakeCurrent_proc* smol_glXMakeCurrent = NULL;
-smol_glXGetProcAddress_proc* smol_glxGetProcAddress = NULL;
+smol_glXGetProcAddress_proc* smol_glXGetProcAddress = NULL;
 smol_glXChooseFBConfig_proc* glXChooseFBConfig = NULL;
 smol_glXGetFBConfigAttrib_proc* smol_glXGetFBConfigAttrib = NULL;
 smol_glXSwapBuffers_proc* smol_glXSwapBuffers = NULL;
@@ -2043,7 +2043,7 @@ XChangeProperty(
 
 		smol_frame_gl_spec_t* spec = config->gl_spec;
 		
-		int initialized = (smol_glxGetProcAddress && smol_glXGetVisualFromFBConfig && glXChooseFBConfig && smol_glXSwapBuffers && smol_glXCreateContextAttribsARB);
+		int initialized = (smol_glXGetProcAddress && smol_glXGetVisualFromFBConfig && glXChooseFBConfig && smol_glXSwapBuffers && smol_glXCreateContextAttribsARB);
 		if(!initialized) {
 			void* libgl = dlopen("libGL.so", RTLD_NOW);
 			if(libgl == NULL) libgl = dlopen("libGL.so.1", RTLD_NOW);
@@ -2054,10 +2054,10 @@ XChangeProperty(
 			glXChooseFBConfig = (smol_glXChooseFBConfig_proc*)dlsym(libgl, "glXChooseFBConfig");
 			smol_glXMakeCurrent = (smol_glXMakeCurrent_proc*)dlsym(libgl, "glXMakeCurrent");
 			smol_glXGetFBConfigAttrib = (smol_glXGetFBConfigAttrib_proc*)dlsym(libgl, "glXGetFBConfigAttrib");
-			smol_glxGetProcAddress = (smol_glXGetProcAddress_proc*)dlsym(libgl, "glXGetProcAddress");
+			smol_glXGetProcAddress = (smol_glXGetProcAddress_proc*)dlsym(libgl, "glXGetProcAddress");
 		 	smol_glXSwapBuffers = (smol_glXSwapBuffers_proc*)dlsym(libgl, "glXSwapBuffers");
 			
-			smol_glXCreateContextAttribsARB = smol_glxGetProcAddress((unsigned char*)"glXCreateContextAttribsARB");
+			smol_glXCreateContextAttribsARB = smol_glXGetProcAddress((unsigned char*)"glXCreateContextAttribsARB");
 			
 		}
 
