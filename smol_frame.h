@@ -247,7 +247,7 @@ void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* eventQu
 // - int minor_version         -- Minor OpenGL version eg. 6
 // - int is_core_profile       -- Does the created context use Core OpenGL profile? If 0, context is backwards compatible
 // - int is_forward_compatible -- Is the created context forward compatible?
-// - int multisamples          -- Is the context capable of multisampling in the window frame buffer? Values over 4 will enable multisampling
+// - int multisamples          -- Is the context capable of multisampling in the window frame buffer? Values equal or over 4 will enable multisampling
 // - int is_debug              -- Does the context have support for debug callbacks
 //Returns: smol_frame_gl_spec_t - containing the prefilled gl spec strucutre.
 smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_core_profile, int is_forward_compatible, int multisamples, int is_debug);
