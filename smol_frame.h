@@ -28,7 +28,7 @@ If your program doesn't need to refer frames in multiple code
 files you can just include this file into your main source file 
 like this:
 
-#define SMOL_FRAME_BACKEND_XXXX  (Optional backend, falls back to X11 also Linux only)
+#define SMOL_FRAME_BACKEND_XXXX  (Optional backend, falls back to X11, also Linux only)
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
@@ -39,9 +39,14 @@ If you need to include this file in multiple source files, add empty .c
 file into your project called 'smol_frame.c' for example, and add the 
 code lines from above the 'int main()' code.
 
-Also on Windows you don't have to link anything to use this library.
-On linux, if you fall back to X11, you can compile code like this:
-gcc main.c -lX11 -o main 
+On Windows and linux, if you include this header, you don't have to link anything a
+additional to the gcc arguments. You can just do this:
+gcc main.c -o main 
+
+And run:
+./main
+
+NOTE: Linux does need the libx11-dev package though for the X11 related headers though.
 
 XCB is bit more cumbersome, because you need these packages:
 - libxcb-devel
@@ -49,9 +54,24 @@ XCB is bit more cumbersome, because you need these packages:
 - libxcb-keysyms1-dev
 - libxkbcommon-dev
 - libxkbcommon-x11-dev
+- libegl1-mesa-dev
 If there's one unified package, let me know I'll wipe that list.
 Anyway compiling with xcb backend would work like this:
-gcc main.c -lxcb -lxcb-icccm -lxcb-keysyms -lxkbcommon -lxkbcommon-x11 -o main
+gcc main.c -lxcb -lxcb-icccm -lxcb-keysyms -lxkbcommon -lxkbcommon-x11 -lEGL -o main
+
+Currently, XCB backend is statically linked, and there's no function loading at all, 
+so you need all those extra arguments for the gcc command line.
+ 
+I'm also considering to drop the XCB backend, because although it's cleaner API, and 
+supports better threading etc. It just seems that all the features seem to be bit scattered 
+around into separate libraries, and documentation seem to be bit lacking. X11 on the other 
+hand is a nice monolith. The problems I've faced with XCB is keysym mapping to utf-32, for
+example typing ^ on nordic keyboard requires double tap of ^ key, but with the xkb xcb 
+utils it doesn't seem to tirgger, all other keys seem to work fine. This is not problem on X11.
+Because GLX with XCB seemed bit tricky I decided to go with EGL, 
+but that feature is still not working, after Making context curret, I get EGL_BAD_ACCESS error. 
+- MaGetzUb
+
 
 If you're using WAYLAND you have to link those libraries
 accordingly. (Wayland not implemented yet)
@@ -59,13 +79,11 @@ accordingly. (Wayland not implemented yet)
 
 /*
 TODO: 
-- Rudimentary OpenGL setup utility functions, on Windows this should be quite trivial task.
 - Icons, Cursors, Mouse hiding
 - Key modifiers to the events
 - Some sort of generic drag / drop system for items (files at starters)
 - Backends (Wayland for Linux, Mac, maybe Web and android)
 - High DPI stuff
-- Implement actual OpenGL context set up for newly generated window, if the window flag is defined.
 
 Contributions: 
 - Me (MaGetzUb) 
