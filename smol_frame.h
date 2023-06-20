@@ -770,7 +770,7 @@ smol_StretchDIBits_proc* smol_StretchDIBits;
 
 //Some OpenGL Stuff for windows:
 typedef HGLRC APIENTRY smol_wglCreateContext_proc(HDC);
-typedef BOOL APIENTRY smol_wglDeleteContext_proct(HGLRC);
+typedef BOOL APIENTRY smol_wglDeleteContext_proc(HGLRC);
 typedef BOOL APIENTRY smol_wglMakeCurrent_proc(HDC, HGLRC);
 typedef PROC APIENTRY smol_wglGetProcAddress_proc(LPCSTR);
 
@@ -893,7 +893,7 @@ typedef BOOL APIENTRY smol_wglGetPixelFormatAttribfvARB_proc(HDC hdc, int iPixel
 
 
 smol_wglCreateContext_proc *smol_wglCreateContext = NULL;
-smol_wglDeleteContext_proct* smol_wglDeleteContext = NULL;
+smol_wglDeleteContext_proc* smol_wglDeleteContext = NULL;
 smol_wglMakeCurrent_proc* smol_wglMakeCurrent = NULL;
 smol_wglGetProcAddress_proc* smol_wglGetProcAddress = NULL;
 
@@ -915,11 +915,11 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 	if(smol__wingdi == NULL) {
 		smol__wingdi = LoadLibrary(TEXT("Gdi32.dll"));
-		smol_GetStockObject = GetProcAddress(smol__wingdi, "GetStockObject");
-		smol_ChoosePixelFormat = GetProcAddress(smol__wingdi, "ChoosePixelFormat");
-		smol_SetPixelFormat = GetProcAddress(smol__wingdi, "SetPixelFormat");
-		smol_SwapBuffers = GetProcAddress(smol__wingdi, "SwapBuffers");
-		smol_StretchDIBits = GetProcAddress(smol__wingdi, "StretchDIBits");
+		smol_GetStockObject = (smol_GetStockObject_proc*)GetProcAddress(smol__wingdi, "GetStockObject");
+		smol_ChoosePixelFormat = (smol_ChoosePixelFormat_proc*)GetProcAddress(smol__wingdi, "ChoosePixelFormat");
+		smol_SetPixelFormat = (smol_SetPixelFormat_proc*)GetProcAddress(smol__wingdi, "SetPixelFormat");
+		smol_SwapBuffers = (smol_SwapBuffers_proc*)GetProcAddress(smol__wingdi, "SwapBuffers");
+		smol_StretchDIBits = (smol_StretchDIBits_proc*)GetProcAddress(smol__wingdi, "StretchDIBits");
 	}
 
 
@@ -1021,12 +1021,13 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 			HMODULE gl_module = LoadLibrary(TEXT("opengl32.dll"));
 
-			smol_wglCreateContext = GetProcAddress(gl_module, "wglCreateContext");
-			smol_wglDeleteContext = GetProcAddress(gl_module, "wglDeleteContext");
-			smol_wglMakeCurrent = GetProcAddress(gl_module, "wglMakeCurrent");
-			smol_wglGetProcAddress = GetProcAddress(gl_module, "wglGetProcAddress");
+			smol_wglCreateContext = (smol_wglCreateContext_proc*)GetProcAddress(gl_module, "wglCreateContext");
+			smol_wglDeleteContext = (smol_wglDeleteContext_proc*)GetProcAddress(gl_module, "wglDeleteContext");
+			smol_wglMakeCurrent = (smol_wglMakeCurrent_proc*)GetProcAddress(gl_module, "wglMakeCurrent");
+			smol_wglGetProcAddress = (smol_wglGetProcAddress_proc*)GetProcAddress(gl_module, "wglGetProcAddress");
 
-			HWND tmp = CreateWindowEx(NULL, smol__wnd_class.lpszClassName, L"", 0, 0, 0, 400, 300, NULL, NULL, smol__wnd_class.hInstance, NULL);
+			//This step is probably not necessary, since we already have a window. 
+			HWND tmp = CreateWindowEx(NULL, smol__wnd_class.lpszClassName, TEXT(""), 0, 0, 0, 400, 300, NULL, NULL, smol__wnd_class.hInstance, NULL);
 
 			HDC hdc = GetDC(tmp);
 
