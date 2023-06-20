@@ -258,6 +258,18 @@ smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int
 //Returns: int - containing 1 if succeeded, 0 otherwise
 int smol_frame_gl_swap_buffers(smol_frame_t* frame);
 
+//smol_frame_get_gl_context - Gets the Window's module handle on Windows 
+//Arguments:
+// - smol_frame_t* frame -- A frame we want the opengl context structure from
+//Returns: smol_gl_context_t - an OpenGl context structure
+smol_gl_context_t smol_frame_get_gl_context(smol_frame_t* frame);
+
+//smol_gl_get_proc_address - Gets an OpenGL function pointer 
+//Arguments:
+// - const char* func  -- A name of the function to load.  
+//Returns: void* containing the OpenGL function handle.
+void* smol_gl_get_proc_address(const char* func);
+
 #if defined(SMOL_PLATFORM_WINDOWS)
 
 //smol_frame_get_win32_window_handle - Gets the HWND window handle on Windows 
@@ -271,13 +283,6 @@ HWND smol_frame_get_win32_window_handle(smol_frame_t* frame);
 // - smol_frame_t* frame -- A frame we want the module handle from
 //Returns: HINSTANCE - the module handle 
 HINSTANCE smol_frame_get_win32_module_handle(smol_frame_t* frame);
-
-
-//smol_frame_get_win32_window_handle - Gets the Window's module handle on Windows 
-//Arguments:
-// - smol_frame_t* frame -- A frame we want the module handle from
-//Returns: HINSTANCE - the module handle 
-smol_gl_context_t smol_frame_get_gl_context(smol_frame_t* frame);
 
 #elif defined(SMOL_PLATFORM_LINUX)
 #	if defined(SMOL_FRAME_BACKEND_X11) 
@@ -720,6 +725,10 @@ smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame) {
 	return frame->event_queue;
 }
 
+smol_gl_context_t smol_frame_get_gl_context(smol_frame_t* frame) {
+	return frame->gl;
+}
+
 #pragma endregion 
 
 #pragma region Win32 Implementation
@@ -1138,6 +1147,14 @@ HWND smol_frame_get_win32_window_handle(smol_frame_t* frame) {
 
 HINSTANCE smol_frame_get_win32_module_handle(smol_frame_t* frame) {
 	return frame->module_handle_win32;
+}
+
+void* smol_gl_get_proc_address(const char* func) {
+	if(!smol_wglGetProcAddress) {
+		fputs("OpenGL context not initialized!", stderr);
+		return NULL;
+	}
+	return smol_wglGetProcAddress(func);
 }
 
 void smol_frame_destroy(smol_frame_t* frame) {
@@ -2146,6 +2163,15 @@ int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
 	glx_swap_buffers(frame->display_server_connection, frame->frame_window);
 	return 1;
 }
+
+void* smol_gl_load_symbol(const char* func) {
+	if(!smol_glXGetProcAddress) {
+		fputs("OpenGL context not initialized!", stderr);
+		return NULL;
+	}
+	return smol_glXGetProcAddress(func);
+}
+
 
 void smol_frame_destroy(smol_frame_t* frame) {
 
