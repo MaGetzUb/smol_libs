@@ -141,6 +141,14 @@ typedef struct __GLXcontextRec *GLXContext;
 #	error Mac OS backend not implemented yet!
 #endif 
 
+#define SMOL_TRUE 1
+#define SMOL_FALSE 0
+
+//Forward declare smol frame gl specification structure
+typedef struct _smol_frame_gl_spec_t smol_frame_gl_spec_t;
+
+//Forward declare smol frame configuration structure
+typedef struct _smol_frame_config_t smol_frame_config_t;
 
 //Forward declaration for frame handle
 typedef struct _smol_frame_t smol_frame_t;
@@ -231,6 +239,18 @@ smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame);
 //Arguments: 
 // - smol_frame_t* frame -- A window that's event queue is being set
 void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* eventQueue);
+
+
+//smol_init_gl_spec - Initializes smol_frame_gl_spec_t structure (R,G,B,A,Stencil bits wil lbe defaulted to 8, and depth to 24)
+//Arguments:
+// - int major_version         -- Major OpenGL version eg. 4
+// - int minor_version         -- Minor OpenGL version eg. 6
+// - int is_core_profile       -- Does the created context use Core OpenGL profile? If 0, context is backwards compatible
+// - int is_forward_compatible -- Is the created context forward compatible?
+// - int multisamples          -- Is the context capable of multisampling in the window frame buffer? Values over 4 will enable multisampling
+// - int is_debug              -- Does the context have support for debug callbacks
+//Returns: smol_frame_gl_spec_t - containing the prefilled gl spec strucutre.
+smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_core_profile, int is_forward_compatible, int multisamples, int is_debug);
 
 //smol_frame_gl_swap_buffers - Swaps opengl buffers
 //Arguments:
@@ -640,6 +660,24 @@ int smol_event_queue_pop_back(smol_event_queue_t* queue, smol_frame_event_t* eve
 #pragma endregion 
 
 #pragma region Platform agnostic functions
+
+smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_core_profile, int is_forward_compatible, int multisamples, int is_debug) {
+	smol_frame_gl_spec_t result = {0};
+    result.major_version = major_version;
+    result.minor_version = minor_version;
+    result.is_backward_compatible = !is_core_profile;
+    result.is_forward_compatible = is_forward_compatible;
+    result.is_debug = is_debug;
+    result.red_bits = 8;
+    result.green_bits = 8;
+    result.blue_bits = 8;
+    result.alpha_bits = 8;
+    result.depth_bits = 24;
+    result.stencil_bits = 8;
+    result.has_multi_sampling = multisamples >= 4;
+    result.num_multi_samples = multisamples;
+	return result;
+}
 
 smol_frame_t* smol_frame_create(int width, int height, const char* title) {
 
@@ -1659,24 +1697,101 @@ typedef __GLXextFuncPtr (APIENTRYP PFNGLXGETPROCADDRESSPROC)(const GLubyte * pro
 #define GLX_CONTEXT_PROFILE_MASK_ARB 0x9126
 #endif
 
+typedef Display* smol_XOpenDisplay_proc(const char* display);
+typedef int smol_XCloseDisplay_proc(Display* display);
+typedef int smol_XGetWindowAttributes_proc(Display* display, Window parentWindow, XWindowAttributes* attirbutes);
+typedef Window smol_XCreateWindow_proc(Display* display, Window parent, int x, int y, unsigned int width, unsigned int height, unsigned int border_width, unsigned int depth, unsigned int window_class, Visual* visual,unsigned int value_mask, XSetWindowAttributes* XWindowAttributes);
+typedef int smol_XDestroyWindow_proc(Display* display,Window w);
+typedef int smol_XMapWindow_proc(Display* display, Window window);
+typedef int smol_XFlush_proc(Display* display);
+typedef void smol_XSetWMNormalHints_proc(Display* display, Window window, XSizeHints* hints);
+typedef Atom smol_XInternAtom_proc(Display* display, _Xconst char* atom_name, Bool only_if_exists);
+typedef Status smol_XSetWMProtocols_proc(Display* display, Window window, Atom* protocols, int count);
+typedef int smol_XStoreName_proc(Display* display, Window window, _Xconst char* window_name);
+typedef XIM smol_XOpenIM_proc(Display* display, struct _XrmHashBucketRec* rdb, char* res_name, char* res_class);
+typedef XImage* smol_XCreateImage_proc(Display* display, Visual* visual, unsigned int depth, int format, int offset, char* data, unsigned int width, unsigned int height, int bitmap_pad, int bytes_per_line);
+typedef GC smol_XCreateGC_proc(Display* display, Drawable drawable, unsigned long valuemask, XGCValues* values);
+typedef Status smol_XGetIMValues_proc(XIM im, ...) _X_SENTINEL(0);
+typedef XIC smol_XCreateIC_proc(XIM im, ...) _X_SENTINEL(0);
+typedef void smol_XSetICFocus_proc(XIC  ic);
+typedef int smol_XChangeProperty_proc(Display* display, Window window, Atom property, Atom type, int format, int mode, _Xconst unsigned char* data, int nelements);
+typedef void smol_XFree_proc(void* data);
+typedef Colormap smol_XCreateColormap_proc(Display* display, Window w, Visual* visual, int alloc);
+typedef int smol_XInstallColormap_proc(Display* display, Colormap colormap);
+typedef void smol_XDestroyIC_proc(XIC ic);
+typedef Status smol_XCloseIM_proc(XIM im);
+typedef int smol_XNextEvent_proc(Display* display, XEvent* event_return);
+typedef Bool smol_XFilterEvent_proc(XEvent* event, Window window);
+typedef int smol_XPending_proc(Display* display);
+typedef int smol_XPeekEvent_proc(Display* display, XEvent* event_return);
+typedef KeySym smol_XLookupKeysym_proc(XKeyEvent* key_event, int index);
+typedef int smol_Xutf8LookupString_proc(XIC ic,XKeyPressedEvent* event, char* buffer_return, int bytes_buffer, KeySym* keysym_return, Status* status_return);
+typedef int smol_XPending_proc(Display* display);
+typedef XSizeHints* smol_XAllocSizeHints_proc(void);
+typedef int smol_XPutImage_proc(Display* display, Drawable d, GC gc, XImage* image, int src_x, int src_y, int dest_x, int dest_y, unsigned int width, unsigned int height);
 
+void* smol__X11_so;
 
+smol_XOpenDisplay_proc* smol_XOpenDisplay;
+smol_XCloseDisplay_proc* smol_XCloseDisplay;
+smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
+smol_XCreateWindow_proc* smol_XCreateWindow;
+smol_XDestroyWindow_proc* smol_XDestroyWindow;
+smol_XMapWindow_proc* smol_XMapWindow;
+smol_XFlush_proc* smol_XFlush;
+smol_XSetWMNormalHints_proc* smol_XSetWMNormalHints;
+smol_XInternAtom_proc* smol_XInternAtom;
+smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
+smol_XStoreName_proc* smol_XStoreName;
+smol_XOpenIM_proc* smol_XOpenIM;
+smol_XCreateImage_proc* smol_XCreateImage;
+smol_XCreateGC_proc* smol_XCreateGC;
+smol_XOpenDisplay_proc* smol_XOpenDisplay;
+smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
+smol_XCreateWindow_proc* smol_XCreateWindow;
+smol_XAllocSizeHints_proc* smol_XAllocSizeHints;
+smol_XSetWMNormalHints_proc* smol_XSetWMNormalHints;
+smol_XInternAtom_proc* smol_XInternAtom;
+smol_XInternAtom_proc* smol_XInternAtom;
+smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
+smol_XStoreName_proc* smol_XStoreName;
+smol_XMapWindow_proc* smol_XMapWindow;
+smol_XOpenIM_proc* smol_XOpenIM;
+smol_XGetIMValues_proc* smol_XGetIMValues;
+smol_XCreateIC_proc* smol_XCreateIC;
+smol_XSetICFocus_proc* smol_XSetICFocus;
+smol_XFlush_proc* smol_XFlush;
+smol_XChangeProperty_proc* smol_XChangeProperty;
+smol_XFree_proc* smol_XFree;
+smol_XCreateColormap_proc* smol_XCreateColormap;
+smol_XInstallColormap_proc* smol_XInstallColormap;
+smol_XDestroyWindow_proc* smol_XDestroyWindow;
+smol_XDestroyIC_proc* smol_XDestroyIC;
+smol_XCloseIM_proc* smol_XCloseIM;
+smol_XCloseDisplay_proc* smol_XCloseDisplay;
+smol_XNextEvent_proc* smol_XNextEvent;
+smol_XFilterEvent_proc* smol_XFilterEvent;
+smol_XPeekEvent_proc* smol_XPeekEvent;
+smol_XLookupKeysym_proc* smol_XLookupKeysym;
+smol_Xutf8LookupString_proc* smol_Xutf8LookupString;
+smol_XPending_proc* smol_XPending;
+smol_XPutImage_proc* smol_XPutImage;
 
-typedef XVisualInfo* glx_get_visual_from_fbconfig_proc_t(Display* display, Window window);
-typedef void glx_make_current_proc_t(Display* display, Window window, GLXContext context);
-typedef XVisualInfo* glx_choose_fbconfig_proc_t(Display* display, int screen, const int* attribs, int* result);
-typedef void* glx_get_proc_address_proc_t(unsigned char* proc);
-typedef int glx_get_fbconfig_attrib_proc_t(Display* display, GLXFBConfig config, int attribute, int* value);
-typedef void glx_swap_buffers_proc_t(Display* display, Window window);
-typedef GLXContext glx_create_context_attribs_arb_proc_t(Display *dpy, GLXFBConfig config,  GLXContext share_context, Bool direct, const int *attrib_list);
+typedef XVisualInfo* smol_glXGetVisualFromFBConfig_proc(Display* display, Window window);
+typedef void smol_glXMakeCurrent_proc(Display* display, Window window, GLXContext context);
+typedef XVisualInfo* smol_glXChooseFBConfig_proc(Display* display, int screen, const int* attribs, int* result);
+typedef void* smol_glXGetProcAddress_proc(unsigned char* proc);
+typedef int smol_glXGetFBConfigAttrib_proc(Display* display, GLXFBConfig config, int attribute, int* value);
+typedef void smol_glXSwapBuffers_proc(Display* display, Window window);
+typedef GLXContext smol_glXCreateContextAttribsARB_proc(Display *dpy, GLXFBConfig config,  GLXContext share_context, Bool direct, const int *attrib_list);
 
-glx_get_visual_from_fbconfig_proc_t* glx_get_visual_from_fbconfig = NULL;
-glx_make_current_proc_t* glx_make_current = NULL;
-glx_get_proc_address_proc_t* glx_get_proc_address = NULL;
-glx_choose_fbconfig_proc_t* glx_choose_fbconfig = NULL;
-glx_get_fbconfig_attrib_proc_t* glx_get_fbconfig_attrib = NULL;
-glx_swap_buffers_proc_t* glx_swap_buffers = NULL;
-glx_create_context_attribs_arb_proc_t* glx_create_context_attribs_arb = NULL;
+smol_glXGetVisualFromFBConfig_proc* glx_get_visual_from_fbconfig = NULL;
+smol_glXMakeCurrent_proc* glx_make_current = NULL;
+smol_glXGetProcAddress_proc* glx_get_proc_address = NULL;
+smol_glXChooseFBConfig_proc* glx_choose_fbconfig = NULL;
+smol_glXGetFBConfigAttrib_proc* glx_get_fbconfig_attrib = NULL;
+smol_glXSwapBuffers_proc* glx_swap_buffers = NULL;
+smol_glXCreateContextAttribsARB_proc* glx_create_context_attribs_arb = NULL;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	XDestroyImage(renderer->image);
@@ -1690,7 +1805,7 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 	renderer->pixel_data = SMOL_ALLOC_ARRAY(unsigned int, frame->width * frame->height);
 	renderer->width = frame->width;
 	renderer->height = frame->height;
-	renderer->image = XCreateImage(
+	renderer->image = smol_XCreateImage(
 		frame->display_server_connection,
 		DefaultVisual(frame->display_server_connection, 0), 
 		DefaultDepth(frame->display_server_connection, 0), 
@@ -1722,7 +1837,7 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 	
 
 	} else {
-		renderer->gc = XCreateGC(frame->display_server_connection, frame->frame_window, 0, NULL);
+		renderer->gc = smol_XCreateGC(frame->display_server_connection, frame->frame_window, 0, NULL);
 	}
 
 	return renderer;
@@ -1731,8 +1846,63 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 	//TODO: Window parenting
+
+	if(!smol__X11_so) {
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so.6", RTLD_NOW);
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so.5", RTLD_NOW);
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so.4", RTLD_NOW);
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so.3", RTLD_NOW);
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so.2", RTLD_NOW);
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so.1", RTLD_NOW);
+		if(!smol__X11_so) smol__X11_so = dlopen("libX11.so", RTLD_NOW);
+
+		smol_XOpenDisplay = (smol_XOpenDisplay_proc*)dlsym(smol__X11_so, "XOpenDisplay");
+		smol_XCloseDisplay = (smol_XCloseDisplay_proc*)dlsym(smol__X11_so, "XCloseDisplay");
+		smol_XGetWindowAttributes = (smol_XGetWindowAttributes_proc*)dlsym(smol__X11_so, "XGetWindowAttributes");
+		smol_XCreateWindow = (smol_XCreateWindow_proc*)dlsym(smol__X11_so, "XCreateWindow");
+		smol_XDestroyWindow = (smol_XDestroyWindow_proc*)dlsym(smol__X11_so, "XDestroyWindow");
+		smol_XMapWindow = (smol_XMapWindow_proc*)dlsym(smol__X11_so, "XMapWindow");
+		smol_XFlush = (smol_XFlush_proc*)dlsym(smol__X11_so, "XFlush"); 
+		smol_XSetWMNormalHints = (smol_XSetWMNormalHints_proc*)dlsym(smol__X11_so, "XSetWMNormalHints");
+		smol_XInternAtom = (smol_XInternAtom_proc*)dlsym(smol__X11_so, "XInternAtom");
+		smol_XSetWMProtocols = (smol_XSetWMProtocols_proc*)dlsym(smol__X11_so, "XSetWMProtocols");
+		smol_XStoreName = (smol_XStoreName_proc*)dlsym(smol__X11_so, "XStoreName");
+		smol_XOpenIM = (smol_XOpenIM_proc*)dlsym(smol__X11_so, "XOpenIM");
+		smol_XCreateImage = (smol_XCreateImage_proc*)dlsym(smol__X11_so, "XCreateImage"); 
+		smol_XPutImage = (smol_XPutImage_proc*)dlsym(smol__X11_so, "XPutImage");
+		smol_XCreateGC = (smol_XCreateGC_proc*)dlsym(smol__X11_so, "XCreateGC"); 
+		smol_XOpenDisplay = (smol_XOpenDisplay_proc*)dlsym(smol__X11_so, "XOpenDisplay"); 
+		smol_XGetWindowAttributes = (smol_XGetWindowAttributes_proc*)dlsym(smol__X11_so, "XGetWindowAttributes"); 
+		smol_XCreateWindow = (smol_XCreateWindow_proc*)dlsym(smol__X11_so, "XCreateWindow"); 
+		smol_XAllocSizeHints = (smol_XAllocSizeHints_proc*)dlsym(smol__X11_so, "XAllocSizeHints"); 
+		smol_XInternAtom = (smol_XInternAtom_proc*)dlsym(smol__X11_so, "XInternAtom");
+		smol_XSetWMProtocols = (smol_XSetWMProtocols_proc*)dlsym(smol__X11_so, "XSetWMProtocols"); 
+		smol_XStoreName = (smol_XStoreName_proc*)dlsym(smol__X11_so, "XStoreName"); 
+		smol_XMapWindow = (smol_XMapWindow_proc*)dlsym(smol__X11_so, "XMapWindow"); 
+		smol_XOpenIM = (smol_XOpenIM_proc*)dlsym(smol__X11_so, "XOpenIM"); 
+		smol_XGetIMValues = (smol_XGetIMValues_proc*)dlsym(smol__X11_so, "XGetIMValues"); 
+		smol_XCreateIC = (smol_XCreateIC_proc*)dlsym(smol__X11_so, "XCreateIC"); 
+		smol_XSetICFocus = (smol_XSetICFocus_proc*)dlsym(smol__X11_so, "XSetICFocus"); 
+		smol_XFlush = (smol_XFlush_proc*)dlsym(smol__X11_so, "XFlush"); 
+		smol_XChangeProperty = (smol_XChangeProperty_proc*)dlsym(smol__X11_so, "XChangeProperty"); 
+		smol_XFree = (smol_XFree_proc*)dlsym(smol__X11_so, "XFree"); 
+		smol_XCreateColormap = (smol_XCreateColormap_proc*)dlsym(smol__X11_so, "XCreateColormap"); 
+		smol_XInstallColormap = (smol_XInstallColormap_proc*)dlsym(smol__X11_so, "XInstallColormap"); 
+		smol_XStoreName = (smol_XStoreName_proc*)dlsym(smol__X11_so, "XStoreName"); 
+		smol_XDestroyWindow = (smol_XDestroyWindow_proc*)dlsym(smol__X11_so, "XDestroyWindow"); 
+		smol_XDestroyIC = (smol_XDestroyIC_proc*)dlsym(smol__X11_so, "XDestroyIC"); 
+		smol_XCloseIM = (smol_XCloseIM_proc*)dlsym(smol__X11_so, "XCloseIM"); 
+		smol_XCloseDisplay = (smol_XCloseDisplay_proc*)dlsym(smol__X11_so, "XCloseDisplay"); 
+		smol_XNextEvent = (smol_XNextEvent_proc*)dlsym(smol__X11_so, "XNextEvent"); 
+		smol_XFilterEvent = (smol_XFilterEvent_proc*)dlsym(smol__X11_so, "XFilterEvent"); 
+		smol_XPeekEvent = (smol_XPeekEvent_proc*)dlsym(smol__X11_so, "XPeekEvent"); 
+		smol_XLookupKeysym = (smol_XLookupKeysym_proc*)dlsym(smol__X11_so, "XLookupKeysym"); 
+		smol_Xutf8LookupString = (smol_Xutf8LookupString_proc*)dlsym(smol__X11_so, "Xutf8LookupString"); 
+		smol_XPending = (smol_XPending_proc*)dlsym(smol__X11_so, "XPending"); 
+	}
+
 	
-	Display* display = XOpenDisplay(NULL);
+	Display* display = smol_XOpenDisplay(NULL);
 	Window parentWindow = None;
 	Window result_window = None;
 	XWindowAttributes attributes = { 0 };
@@ -1755,7 +1925,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	if(parentWindow == None)
 		return NULL;
 
-	if(XGetWindowAttributes(display, parentWindow, &attributes) == 0)
+	if(smol_XGetWindowAttributes(display, parentWindow, &attributes) == 0)
 		return NULL;
 	
 	setAttributes.event_mask = (
@@ -1769,7 +1939,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	XCreateWindow(display, parent, x, y, width, height, border_width, depth, 
                        class, visual, valuemask, attributes)
 	*/
-	result_window = XCreateWindow(
+	result_window = smol_XCreateWindow(
 		display, 
 		parentWindow, 
 		(attributes.width + config->width) >> 1, 
@@ -1790,25 +1960,25 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 	if(!(config->flags & SMOL_FRAME_CONFIG_HAS_MAXIMIZE_BUTTON)) {
 
-		XSizeHints* sizeHints = XAllocSizeHints();
+		XSizeHints* sizeHints = smol_XAllocSizeHints();
 		sizeHints->flags = PMinSize | PMaxSize;
 		sizeHints->min_width = sizeHints->max_width = config->width;
 		sizeHints->min_height = sizeHints->max_height = config->height;
-		XSetWMNormalHints(display, result_window, sizeHints);
+		smol_XSetWMNormalHints(display, result_window, sizeHints);
 
 		setAttributes.override_redirect = True;
 	}
 	
 
 	if(smol__wm_delete_window_atom == None) { 
-		smol__wm_delete_window_atom = XInternAtom(display, "WM_DELETE_WINDOW", False);
+		smol__wm_delete_window_atom = smol_XInternAtom(display, "WM_DELETE_WINDOW", False);
 	}
 
 	if(smol__frame_handle_atom == None) {
-		smol__frame_handle_atom = XInternAtom(display, "SMOL_FRAME_HANDLE", False);
+		smol__frame_handle_atom = smol_XInternAtom(display, "SMOL_FRAME_HANDLE", False);
 	}
 
-	status = XSetWMProtocols(display, result_window, &smol__wm_delete_window_atom, 1);
+	status = smol_XSetWMProtocols(display, result_window, &smol__wm_delete_window_atom, 1);
 
 	SMOL_ASSERT("Failed to set Window protocols!" && (status != 0));
 
@@ -1826,15 +1996,15 @@ XChangeProperty(
 */
 
 
-	XStoreName(display, result_window, config->title);
-	XMapWindow(display, result_window);
+	smol_XStoreName(display, result_window, config->title);
+	smol_XMapWindow(display, result_window);
 
-	im = XOpenIM(display, NULL, NULL, NULL);
-	XGetIMValues(im, XNQueryInputStyle, &styles, NULL);
-	ic = XCreateIC(im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, result_window, NULL);
+	im = smol_XOpenIM(display, NULL, NULL, NULL);
+	smol_XGetIMValues(im, XNQueryInputStyle, &styles, NULL);
+	ic = smol_XCreateIC(im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, result_window, NULL);
 
-	XSetICFocus(ic);
-	XFlush(display);
+	smol_XSetICFocus(ic);
+	smol_XFlush(display);
 
 	result = SMOL_ALLOC_INSTANCE(smol_frame_t);
 	result->display_server_connection = display;
@@ -1847,8 +2017,8 @@ XChangeProperty(
 	result->im = im;
 	result->renderer = NULL;
 
-	XChangeProperty(display, result_window, smol__frame_handle_atom, XA_STRING, 8, PropertyChangeMask, (const unsigned char*)&result, sizeof(smol_frame_t*));
-	XFlush(display);
+	smol_XChangeProperty(display, result_window, smol__frame_handle_atom, XA_STRING, 8, PropertyChangeMask, (const unsigned char*)&result, sizeof(smol_frame_t*));
+	smol_XFlush(display);
 
 	if(!(config->gl_spec)) {
 		result->renderer = smol_renderer_create(result);
@@ -1863,12 +2033,12 @@ XChangeProperty(
 
 			SMOL_ASSERT("Couldn't load libGL.so dynamically!" && libgl);
 
-			glx_get_visual_from_fbconfig = (glx_get_visual_from_fbconfig_proc_t*)dlsym(libgl, "glXGetVisualFromFBConfig");
-			glx_choose_fbconfig = (glx_choose_fbconfig_proc_t*)dlsym(libgl, "glXChooseFBConfig");
-			glx_make_current = (glx_make_current_proc_t*)dlsym(libgl, "glXMakeCurrent");
-			glx_get_fbconfig_attrib = (glx_get_fbconfig_attrib_proc_t*)dlsym(libgl, "glXGetFBConfigAttrib");
-			glx_get_proc_address = (glx_get_proc_address_proc_t*)dlsym(libgl, "glXGetProcAddress");
-		 	glx_swap_buffers = (glx_swap_buffers_proc_t*)dlsym(libgl, "glXSwapBuffers");
+			glx_get_visual_from_fbconfig = (smol_glXGetVisualFromFBConfig_proc*)dlsym(libgl, "glXGetVisualFromFBConfig");
+			glx_choose_fbconfig = (smol_glXChooseFBConfig_proc*)dlsym(libgl, "glXChooseFBConfig");
+			glx_make_current = (smol_glXMakeCurrent_proc*)dlsym(libgl, "glXMakeCurrent");
+			glx_get_fbconfig_attrib = (smol_glXGetFBConfigAttrib_proc*)dlsym(libgl, "glXGetFBConfigAttrib");
+			glx_get_proc_address = (smol_glXGetProcAddress_proc*)dlsym(libgl, "glXGetProcAddress");
+		 	glx_swap_buffers = (smol_glXSwapBuffers_proc*)dlsym(libgl, "glXSwapBuffers");
 			
 			glx_create_context_attribs_arb = glx_get_proc_address((unsigned char*)"glXCreateContextAttribsARB");
 			
@@ -1917,7 +2087,7 @@ XChangeProperty(
 						bestSampleCount = num_samples;
 					}
 				}
-				XFree(vi);
+				smol_XFree(vi);
 			}
 
 			if(bestFbc > 0) {
@@ -1933,11 +2103,11 @@ XChangeProperty(
 		XVisualInfo* visualinfo = glx_get_visual_from_fbconfig(display, config);
 
 		Window root_window = RootWindow(display, visualinfo->screen);
-		Colormap color_map = XCreateColormap(display, root_window, visualinfo->visual, AllocNone);
+		Colormap color_map = smol_XCreateColormap(display, root_window, visualinfo->visual, AllocNone);
 
-		int num_colormaps = XInstallColormap(display, color_map);
+		int num_colormaps = smol_XInstallColormap(display, color_map);
 
-		XFlush(display);
+		smol_XFlush(display);
 
 		int context_attribs[] = {
 			GLX_CONTEXT_MAJOR_VERSION_ARB, spec->major_version,
@@ -1967,8 +2137,8 @@ XChangeProperty(
 }
 
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
-	XStoreName(frame->display_server_connection, frame->frame_window, title);
-	XFlush(frame->display_server_connection);
+	smol_XStoreName(frame->display_server_connection, frame->frame_window, title);
+	smol_XFlush(frame->display_server_connection);
 }
 
 int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
@@ -1979,10 +2149,10 @@ int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
 
 void smol_frame_destroy(smol_frame_t* frame) {
 
-	XDestroyWindow(frame->display_server_connection, frame->frame_window);
-	XDestroyIC(frame->ic);
-	XCloseIM(frame->im);
-	XCloseDisplay(frame->display_server_connection);
+	smol_XDestroyWindow(frame->display_server_connection, frame->frame_window);
+	smol_XDestroyIC(frame->ic);
+	smol_XCloseIM(frame->im);
+	smol_XCloseDisplay(frame->display_server_connection);
 
 	smol_event_queue_destroy(&frame->event_queue);
 	if(frame->renderer) smol_renderer_destroy(frame->renderer);
@@ -1998,8 +2168,8 @@ void smol_frame_update(smol_frame_t* frame) {
 	XEvent xevent;
 	smol_frame_event_t event = { 0 };
 
-	while(XPending(frame->display_server_connection)) {
-		XNextEvent(frame->display_server_connection, &xevent);
+	while(smol_XPending(frame->display_server_connection)) {
+		smol_XNextEvent(frame->display_server_connection, &xevent);
 
 		Atom actual_type;
 		int actual_format;
@@ -2024,7 +2194,7 @@ void smol_frame_update(smol_frame_t* frame) {
 
 		//SMOL_ASSERT(actual_type == XA_STRING && actual_format == 8);
 
-		XFilterEvent(&xevent, frame->frame_window);
+		smol_XFilterEvent(&xevent, frame->frame_window);
 		switch(xevent.type) {
 			case Expose: {
 				//mWidth = attribs.width;
@@ -2061,8 +2231,8 @@ void smol_frame_update(smol_frame_t* frame) {
 				int physical = 1;
 				if(xevent.type == KeyRelease) {
 					XEvent next;
-					if (XPending(frame->display_server_connection)) {
-						XPeekEvent(frame->display_server_connection, &next);
+					if (smol_XPending(frame->display_server_connection)) {
+						smol_XPeekEvent(frame->display_server_connection, &next);
 						if(next.type == KeyPress && next.xkey.time == xevent.xkey.time && next.xkey.keycode == xevent.xkey.keycode) 
 							physical = 0;
 					}
@@ -2074,14 +2244,14 @@ void smol_frame_update(smol_frame_t* frame) {
 
 				event.type = ((xevent.type == KeyRelease) && physical) ? SMOL_FRAME_EVENT_KEY_UP: SMOL_FRAME_EVENT_KEY_DOWN;
 
-				KeySym keysym = XLookupKeysym(&xevent.xkey, 0);
+				KeySym keysym = smol_XLookupKeysym(&xevent.xkey, 0);
 				event.key.code = smol_frame_mapkey(keysym);
 				smol_event_queue_push_back(frame->event_queue, &event);
 
 				if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
 					char buffer[6] = {0};
 					Status status = 0;
-					int count = Xutf8LookupString(frame->ic, &xevent.xkey, buffer, 6, &keysym, &status);
+					int count = smol_Xutf8LookupString(frame->ic, &xevent.xkey, buffer, 6, &keysym, &status);
 					unsigned int unicode = 0;
 					switch(count) {
 						case 1:
@@ -2211,7 +2381,7 @@ void smol_frame_blit_pixels(
 		}
 	}
 
-	XPutImage(frame->display_server_connection, frame->frame_window, renderer->gc, renderer->image, 0, 0, 0, 0, renderer->width, renderer->height);
+	smol_XPutImage(frame->display_server_connection, frame->frame_window, renderer->gc, renderer->image, 0, 0, 0, 0, renderer->width, renderer->height);
 }
 
 Display* smol_frame_get_x11_display(smol_frame_t* frame) {
