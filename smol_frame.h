@@ -83,13 +83,20 @@ Contributions:
 #	define WIN32_LEAN_AND_MEAN
 #	include <Windows.h>
 #	include <windowsx.h>
+#	include <WinUser.h>
 #	include <wingdi.h>
 #	ifdef _MSC_VER
 #		pragma comment(lib, "kernel32.lib")
 #		pragma comment(lib, "user32.lib")
 #		pragma comment(lib, "ole32.lib")
-#		pragma comment(lib, "gdi32.lib")
 #		pragma comment(lib, "shell32.lib")
+#		ifndef APIENTRY
+#			define APIENTRY __stdcall
+#		endif 
+#	else 
+#		ifndef APIENTRY
+#			define APIENTRY __attribute__((stdcall))
+#		endif 
 #	endif 
 #elif defined(__linux__) 
 #	ifndef SMOL_PLATFORM_LINUX
@@ -682,17 +689,31 @@ smol_event_queue_t* smol_frame_get_event_queue(smol_frame_t* frame) {
 
 WNDCLASSEX smol__wnd_class;
 
+HMODULE smol__wingdi;
+
+typedef HGDIOBJ smol_GetStockObject_proc(int i);
+typedef int smol_ChoosePixelFormat_proc(HDC hdc, const PIXELFORMATDESCRIPTOR *ppfd);
+typedef BOOL smol_SetPixelFormat_proc(HDC hdc,int format, const PIXELFORMATDESCRIPTOR *ppfd);
+typedef BOOL smol_SwapBuffers_proc(HDC unnamedParam1);
+typedef int smol_StretchDIBits_proc(HDC hdc, int xDest, int yDest, int DestWidth, int DestHeight, int xSrc, int ySrc, int SrcWidth, int SrcHeight, const VOID* lpBits, const BITMAPINFO* lpbmi, UINT iUsage, DWORD rop);
+
+smol_GetStockObject_proc* smol_GetStockObject;
+smol_ChoosePixelFormat_proc* smol_ChoosePixelFormat;
+smol_SetPixelFormat_proc* smol_SetPixelFormat;
+smol_SwapBuffers_proc* smol_SwapBuffers;
+smol_StretchDIBits_proc* smol_StretchDIBits;
+
 //Some OpenGL Stuff for windows:
-typedef HGLRC wgl_create_context_proc_t(HDC);
-typedef BOOL wgl_delete_context_proct_t(HGLRC);
-typedef BOOL wgl_make_current_proc_t(HDC, HGLRC);
-typedef PROC wgl_get_proc_address_proc_t(LPCSTR);
+typedef HGLRC APIENTRY smol_wglCreateContext_proc(HDC);
+typedef BOOL APIENTRY smol_wglDeleteContext_proct(HGLRC);
+typedef BOOL APIENTRY smol_wglMakeCurrent_proc(HDC, HGLRC);
+typedef PROC APIENTRY smol_wglGetProcAddress_proc(LPCSTR);
 
-typedef HGLRC wgl_create_context_attribs_arb_proc_t(HDC hDC, HGLRC hshareContext, const int *attribList);
+typedef HGLRC APIENTRY smol_wglCreateContextAttribsARB_proc(HDC hDC, HGLRC hshareContext, const int *attribList);
 
-typedef BOOL wgl_choose_pixel_format_arb_proc_t(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
-typedef BOOL wgl_get_pixel_format_attribiv_arb_proc_t(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
-typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);
+typedef BOOL APIENTRY smol_wglChoosePixelFormatARB_proc(HDC hdc, const int *piAttribIList, const FLOAT *pfAttribFList, UINT nMaxFormats, int *piFormats, UINT *nNumFormats);
+typedef BOOL APIENTRY smol_wglGetPixelFormatAttribivARB_proc(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues);
+typedef BOOL APIENTRY smol_wglGetPixelFormatAttribfvARB_proc(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, FLOAT *pfValues);
 
 
 
@@ -806,16 +827,16 @@ typedef BOOL wgl_get_pixel_format_attribfv_arb_proc_t(HDC hdc, int iPixelFormat,
 #define GL_SAMPLE_COVERAGE_INVERT_ARB           0x80AB
 
 
-wgl_create_context_proc_t *smol_wglCreateContext = NULL;
-wgl_delete_context_proct_t* smol_wglDeleteContext = NULL;
-wgl_make_current_proc_t* smol_wglMakeCurrent = NULL;
-wgl_get_proc_address_proc_t* smol_wglGetProcAddress = NULL;
+smol_wglCreateContext_proc *smol_wglCreateContext = NULL;
+smol_wglDeleteContext_proct* smol_wglDeleteContext = NULL;
+smol_wglMakeCurrent_proc* smol_wglMakeCurrent = NULL;
+smol_wglGetProcAddress_proc* smol_wglGetProcAddress = NULL;
 
-wgl_create_context_attribs_arb_proc_t* smol_wglCreateContextAttribsARB = NULL;
+smol_wglCreateContextAttribsARB_proc* smol_wglCreateContextAttribsARB = NULL;
 
-wgl_get_pixel_format_attribfv_arb_proc_t* smol_wglGetPixelFormatAttribfvARB = NULL;
-wgl_get_pixel_format_attribiv_arb_proc_t* smol_wglGetPixelFormatAttribivARB = NULL;
-wgl_choose_pixel_format_arb_proc_t* smol_wglChoosePixelFormatARB = NULL;
+smol_wglGetPixelFormatAttribfvARB_proc* smol_wglGetPixelFormatAttribfvARB = NULL;
+smol_wglGetPixelFormatAttribivARB_proc* smol_wglGetPixelFormatAttribivARB = NULL;
+smol_wglChoosePixelFormatARB_proc* smol_wglChoosePixelFormatARB = NULL;
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -826,6 +847,15 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	POINT point = { 0 };
 	DWORD ex_style = WS_VISIBLE | WS_SYSMENU | WS_MINIMIZEBOX;
 	smol_frame_t* result = NULL;
+
+	if(smol__wingdi == NULL) {
+		smol__wingdi = LoadLibrary(TEXT("Gdi32.dll"));
+		smol_GetStockObject = GetProcAddress(smol__wingdi, "GetStockObject");
+		smol_ChoosePixelFormat = GetProcAddress(smol__wingdi, "ChoosePixelFormat");
+		smol_SetPixelFormat = GetProcAddress(smol__wingdi, "SetPixelFormat");
+		smol_SwapBuffers = GetProcAddress(smol__wingdi, "SwapBuffers");
+		smol_StretchDIBits = GetProcAddress(smol__wingdi, "StretchDIBits");
+	}
 
 
 	if(smol__wnd_class.cbSize == 0) {
@@ -838,7 +868,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		smol__wnd_class.hInstance = GetModuleHandle(0);
 		smol__wnd_class.hIcon = LoadIcon(NULL, IDI_WINLOGO);
 		smol__wnd_class.hCursor = LoadCursor(NULL, IDC_ARROW);
-		smol__wnd_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+		smol__wnd_class.hbrBackground = (HBRUSH)smol_GetStockObject(BLACK_BRUSH);
 		smol__wnd_class.lpszMenuName = NULL;
 		smol__wnd_class.lpszClassName = TEXT("smol_frame");
 		smol__wnd_class.hIconSm = NULL;
@@ -945,17 +975,17 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 			pfd.cAlphaBits = 8;
 			pfd.iLayerType = PFD_MAIN_PLANE;
 
-			int pixelFormat = ChoosePixelFormat(hdc, &pfd);
+			int pixelFormat = smol_ChoosePixelFormat(hdc, &pfd);
 
-			SetPixelFormat(hdc, pixelFormat, &pfd);
+			smol_SetPixelFormat(hdc, pixelFormat, &pfd);
 
 			HGLRC tmpCtx = smol_wglCreateContext(hdc);
 			smol_wglMakeCurrent(hdc, tmpCtx);
 
-			smol_wglCreateContextAttribsARB = (wgl_create_context_attribs_arb_proc_t*)smol_wglGetProcAddress("wglCreateContextAttribsARB");
-			smol_wglChoosePixelFormatARB = (wgl_choose_pixel_format_arb_proc_t*)smol_wglGetProcAddress("wglChoosePixelFormatARB");
-			smol_wglGetPixelFormatAttribfvARB = (wgl_get_pixel_format_attribfv_arb_proc_t*)smol_wglGetProcAddress("wglGetPixelFormatAttribfvARB");
-			smol_wglGetPixelFormatAttribivARB = (wgl_get_pixel_format_attribiv_arb_proc_t*)smol_wglGetProcAddress("wglGetPixelFormatAttribivARB");
+			smol_wglCreateContextAttribsARB = (smol_wglCreateContextAttribsARB_proc*)smol_wglGetProcAddress("wglCreateContextAttribsARB");
+			smol_wglChoosePixelFormatARB = (smol_wglChoosePixelFormatARB_proc*)smol_wglGetProcAddress("wglChoosePixelFormatARB");
+			smol_wglGetPixelFormatAttribfvARB = (smol_wglGetPixelFormatAttribfvARB_proc*)smol_wglGetProcAddress("wglGetPixelFormatAttribfvARB");
+			smol_wglGetPixelFormatAttribivARB = (smol_wglGetPixelFormatAttribivARB_proc*)smol_wglGetProcAddress("wglGetPixelFormatAttribivARB");
 			has_gl_arb_functionality = (smol_wglChoosePixelFormatARB && smol_wglCreateContextAttribsARB && smol_wglGetPixelFormatAttribfvARB && smol_wglGetPixelFormatAttribivARB);
 
 			if(has_gl_arb_functionality) {
@@ -969,7 +999,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 		if(has_gl_arb_functionality) {
 
-			int formats[64];
+			int formats[64] = { 0 };
 			UINT numFormats;
 			PIXELFORMATDESCRIPTOR pfd = { 0 };
 
@@ -979,7 +1009,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 				WGL_DRAW_TO_WINDOW_ARB, 1,
 				WGL_DOUBLE_BUFFER_ARB,  1,
 				WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
-				WGL_COLOR_BITS_ARB,     gl_spec->red_bits + gl_spec->green_bits + gl_spec->blue_bits,
+				//WGL_COLOR_BITS_ARB,     gl_spec->red_bits + gl_spec->green_bits + gl_spec->blue_bits,
 				WGL_RED_BITS_ARB,       gl_spec->red_bits,
 				WGL_GREEN_BITS_ARB,     gl_spec->green_bits,
 				WGL_BLUE_BITS_ARB,      gl_spec->blue_bits,
@@ -1005,10 +1035,10 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 					int values[2] = {0};
 					BOOL has_feature = smol_wglGetPixelFormatAttribivARB(dc, formats[i], 0, 2, ids, values);
 					
-					int diff = values[1] - gl_spec->num_multi_samples;
-					if(diff < 0) diff = -diff;
 
 					if(values[0]) {
+						int diff = values[1] - gl_spec->num_multi_samples;
+						if(diff < 0) diff = -diff;
 						if(diff < samples_diff) {
 			
 							pixelformat_atribs[16] = WGL_SAMPLE_BUFFERS_ARB;
@@ -1019,12 +1049,14 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 							samples_diff = diff;
 							selected = i;
 						}
+						if(samples_diff == 0)
+							break;
 					}
 					
 				}
 			}
 
-			if(SetPixelFormat(dc, formats[selected], &pfd) == FALSE) {
+			if(smol_SetPixelFormat(dc, formats[selected], &pfd) == FALSE) {
 				printf("Failed to set pixel format! Error: %08x\n", GetLastError());
 			}
 
@@ -1097,7 +1129,7 @@ int smol_frame_mapkey(WPARAM key, LPARAM ext);
 
 int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
 	if(!frame->gl.context) return 0;
-	return SwapBuffers(GetDC(frame->frame_handle_win32));
+	return smol_SwapBuffers(GetDC(frame->frame_handle_win32));
 }
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -1133,6 +1165,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			return 1;
 		} break;
 		case WM_MOUSEMOVE: {
+
 			event.type = SMOL_FRAME_EVENT_MOUSE_MOVE;
 			event.mouse.x = GET_X_LPARAM(lParam);
 			event.mouse.y = GET_Y_LPARAM(lParam);
@@ -1155,7 +1188,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 				case WM_LBUTTONDOWN: event.mouse.button = 1; break;
 				case WM_RBUTTONDOWN: event.mouse.button = 2; break;
 				case WM_MBUTTONDOWN: event.mouse.button = 3; break;
-				case WM_XBUTTONDOWN: event.mouse.button = 4 + GET_XBUTTON_WPARAM(wParam); break;
+				case WM_XBUTTONDOWN: event.mouse.button = 4 + HIWORD(wParam); break;
 			}
 
 			event.mouse.x = GET_X_LPARAM(lParam);
@@ -1180,7 +1213,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 				case WM_LBUTTONUP: event.mouse.button = 1; break;
 				case WM_RBUTTONUP: event.mouse.button = 2; break;
 				case WM_MBUTTONUP: event.mouse.button = 3; break;
-				case WM_XBUTTONUP: event.mouse.button = 4 + GET_XBUTTON_WPARAM(wParam); break;
+				case WM_XBUTTONUP: event.mouse.button = 4 + HIWORD(wParam); break;
 			}
 
 			event.mouse.x = GET_X_LPARAM(lParam);
@@ -1211,6 +1244,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			frame->old_mouse_y = event.mouse.y;
 			return 1;
 		} break;
+		#ifdef _MSC_VER
 		case WM_MOUSEHWHEEL: {
 
 			event.type = SMOL_FRAME_EVENT_MOUSE_HOR_WHEEL;
@@ -1232,6 +1266,7 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 			
 			return 1;
 		} break;
+		#endif
 		case WM_KEYDOWN:
 		case WM_KEYUP: {
 
@@ -1410,7 +1445,7 @@ void smol_frame_blit_pixels(
 	bmi.bmiHeader.biBitCount = 32;
 	bmi.bmiHeader.biCompression = BI_RGB;
 
-	StretchDIBits(GetDC(frame->frame_handle_win32), dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH, pixels, &bmi, DIB_RGB_COLORS, SRCCOPY);
+	smol_StretchDIBits(GetDC(frame->frame_handle_win32), dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH, pixels, &bmi, DIB_RGB_COLORS, SRCCOPY);
 
 }
 
