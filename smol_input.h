@@ -1,5 +1,5 @@
 /*
-Copyright � 2023 Marko Ranta (Discord: Coderunner#2271)
+Copyright � 2023 Marko Ranta (Discord: coderunner)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
