@@ -686,19 +686,19 @@ int smol_event_queue_pop_back(smol_event_queue_t* queue, smol_frame_event_t* eve
 
 smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_core_profile, int is_forward_compatible, int multisamples, int is_debug) {
 	smol_frame_gl_spec_t result = {0};
-    result.major_version = major_version;
-    result.minor_version = minor_version;
-    result.is_backward_compatible = !is_core_profile;
-    result.is_forward_compatible = is_forward_compatible;
-    result.is_debug = is_debug;
-    result.red_bits = 8;
-    result.green_bits = 8;
-    result.blue_bits = 8;
-    result.alpha_bits = 8;
-    result.depth_bits = 24;
-    result.stencil_bits = 8;
-    result.has_multi_sampling = multisamples >= 4;
-    result.num_multi_samples = multisamples;
+	result.major_version = major_version;
+	result.minor_version = minor_version;
+	result.is_backward_compatible = !is_core_profile;
+	result.is_forward_compatible = is_forward_compatible;
+	result.is_debug = is_debug;
+	result.red_bits = 8;
+	result.green_bits = 8;
+	result.blue_bits = 8;
+	result.alpha_bits = 8;
+	result.depth_bits = 24;
+	result.stencil_bits = 8;
+	result.has_multi_sampling = multisamples >= 4;
+	result.num_multi_samples = multisamples;
 	return result;
 }
 
@@ -974,7 +974,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 #ifdef UNICODE
 	wchar_t wide_title[256] = { 0 };
-	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, config->title, (int)strlen(config->title), wide_title, 1024);
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, config->title, (int)strlen(config->title), wide_title, 256);
 	title_text = wide_title;
 #else 
 	title_text = config->title;
