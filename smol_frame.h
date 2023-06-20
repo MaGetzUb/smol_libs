@@ -1802,13 +1802,13 @@ typedef int smol_glXGetFBConfigAttrib_proc(Display* display, GLXFBConfig config,
 typedef void smol_glXSwapBuffers_proc(Display* display, Window window);
 typedef GLXContext smol_glXCreateContextAttribsARB_proc(Display *dpy, GLXFBConfig config,  GLXContext share_context, Bool direct, const int *attrib_list);
 
-smol_glXGetVisualFromFBConfig_proc* glx_get_visual_from_fbconfig = NULL;
-smol_glXMakeCurrent_proc* glx_make_current = NULL;
-smol_glXGetProcAddress_proc* glx_get_proc_address = NULL;
-smol_glXChooseFBConfig_proc* glx_choose_fbconfig = NULL;
-smol_glXGetFBConfigAttrib_proc* glx_get_fbconfig_attrib = NULL;
-smol_glXSwapBuffers_proc* glx_swap_buffers = NULL;
-smol_glXCreateContextAttribsARB_proc* glx_create_context_attribs_arb = NULL;
+smol_glXGetVisualFromFBConfig_proc* smol_glXGetVisualFromFBConfig = NULL;
+smol_glXMakeCurrent_proc* smol_glXMakeCurrent = NULL;
+smol_glXGetProcAddress_proc* smol_glxGetProcAddress = NULL;
+smol_glXChooseFBConfig_proc* glXChooseFBConfig = NULL;
+smol_glXGetFBConfigAttrib_proc* smol_glXGetFBConfigAttrib = NULL;
+smol_glXSwapBuffers_proc* smol_glXSwapBuffers = NULL;
+smol_glXCreateContextAttribsARB_proc* smol_glXCreateContextAttribsARB = NULL;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	XDestroyImage(renderer->image);
@@ -2043,21 +2043,21 @@ XChangeProperty(
 
 		smol_frame_gl_spec_t* spec = config->gl_spec;
 		
-		int initialized = (glx_get_proc_address && glx_get_visual_from_fbconfig && glx_choose_fbconfig && glx_swap_buffers && glx_create_context_attribs_arb);
+		int initialized = (smol_glxGetProcAddress && smol_glXGetVisualFromFBConfig && glXChooseFBConfig && smol_glXSwapBuffers && smol_glXCreateContextAttribsARB);
 		if(!initialized) {
 			void* libgl = dlopen("libGL.so", RTLD_NOW);
 			if(libgl == NULL) libgl = dlopen("libGL.so.1", RTLD_NOW);
 
 			SMOL_ASSERT("Couldn't load libGL.so dynamically!" && libgl);
 
-			glx_get_visual_from_fbconfig = (smol_glXGetVisualFromFBConfig_proc*)dlsym(libgl, "glXGetVisualFromFBConfig");
-			glx_choose_fbconfig = (smol_glXChooseFBConfig_proc*)dlsym(libgl, "glXChooseFBConfig");
-			glx_make_current = (smol_glXMakeCurrent_proc*)dlsym(libgl, "glXMakeCurrent");
-			glx_get_fbconfig_attrib = (smol_glXGetFBConfigAttrib_proc*)dlsym(libgl, "glXGetFBConfigAttrib");
-			glx_get_proc_address = (smol_glXGetProcAddress_proc*)dlsym(libgl, "glXGetProcAddress");
-		 	glx_swap_buffers = (smol_glXSwapBuffers_proc*)dlsym(libgl, "glXSwapBuffers");
+			smol_glXGetVisualFromFBConfig = (smol_glXGetVisualFromFBConfig_proc*)dlsym(libgl, "glXGetVisualFromFBConfig");
+			glXChooseFBConfig = (smol_glXChooseFBConfig_proc*)dlsym(libgl, "glXChooseFBConfig");
+			smol_glXMakeCurrent = (smol_glXMakeCurrent_proc*)dlsym(libgl, "glXMakeCurrent");
+			smol_glXGetFBConfigAttrib = (smol_glXGetFBConfigAttrib_proc*)dlsym(libgl, "glXGetFBConfigAttrib");
+			smol_glxGetProcAddress = (smol_glXGetProcAddress_proc*)dlsym(libgl, "glXGetProcAddress");
+		 	smol_glXSwapBuffers = (smol_glXSwapBuffers_proc*)dlsym(libgl, "glXSwapBuffers");
 			
-			glx_create_context_attribs_arb = glx_get_proc_address((unsigned char*)"glXCreateContextAttribsARB");
+			smol_glXCreateContextAttribsARB = smol_glxGetProcAddress((unsigned char*)"glXCreateContextAttribsARB");
 			
 		}
 
@@ -2084,17 +2084,17 @@ XChangeProperty(
 		GLXFBConfig* config = NULL;
 		{
 			int count = 0;
-			GLXFBConfig* configs = glx_choose_fbconfig(display, DefaultScreen(display), attribs, &count);
+			GLXFBConfig* configs = glXChooseFBConfig(display, DefaultScreen(display), attribs, &count);
 			int bestFbc = -1; 
 			int bestSampleCount = 999;
 			SMOL_ASSERT("No configurations!" && count);
 
 			for(int i = 0; i < count; i++) {
-				XVisualInfo* vi = glx_get_visual_from_fbconfig(display, configs[i]);
+				XVisualInfo* vi = smol_glXGetVisualFromFBConfig(display, configs[i]);
 				if(vi) {
 					int sampleBuffers, num_samples;
-					glx_get_fbconfig_attrib(display, configs[i], GLX_SAMPLE_BUFFERS, &sampleBuffers);
-					glx_get_fbconfig_attrib(display, configs[i], GLX_SAMPLES, &num_samples);
+					smol_glXGetFBConfigAttrib(display, configs[i], GLX_SAMPLE_BUFFERS, &sampleBuffers);
+					smol_glXGetFBConfigAttrib(display, configs[i], GLX_SAMPLES, &num_samples);
 					
 					int diff = (spec->num_multi_samples - num_samples);
 					if(diff < 0) diff = -diff;
@@ -2117,7 +2117,7 @@ XChangeProperty(
 			config = configs[bestFbc];
 		}
 
-		XVisualInfo* visualinfo = glx_get_visual_from_fbconfig(display, config);
+		XVisualInfo* visualinfo = smol_glXGetVisualFromFBConfig(display, config);
 
 		Window root_window = RootWindow(display, visualinfo->screen);
 		Colormap color_map = smol_XCreateColormap(display, root_window, visualinfo->visual, AllocNone);
@@ -2141,8 +2141,8 @@ XChangeProperty(
 		/*
 		GLXContext glXCreateContextAttribsARB(Display *dpy, GLXFBConfig config, GLXContext share_context, Bool direct, const int *attrib_list);
 		*/
-		result->gl.context = glx_create_context_attribs_arb(display, config, NULL, True, context_attribs);
-		glx_make_current(result->display_server_connection, result->frame_window, result->gl.context);
+		result->gl.context = smol_glXCreateContextAttribsARB(display, config, NULL, True, context_attribs);
+		smol_glXMakeCurrent(result->display_server_connection, result->frame_window, result->gl.context);
 
 	}
 
@@ -2160,7 +2160,7 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 
 int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
 	if(!frame->gl.context) return 0;
-	glx_swap_buffers(frame->display_server_connection, frame->frame_window);
+	smol_glXSwapBuffers(frame->display_server_connection, frame->frame_window);
 	return 1;
 }
 

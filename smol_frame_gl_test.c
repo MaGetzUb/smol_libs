@@ -7,7 +7,7 @@
 #define GLBIND_IMPLEMENTATION
 #include "thirdparty/glbind.h"
 
-#define SMOL_FRAME_BACKEND_XCB
+//#define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
@@ -61,21 +61,7 @@ int main() {
 
 	GLenum result = glbInit(NULL, NULL);
 
-	smol_frame_gl_spec_t gl_spec = {
-		.major_version = 3,
-		.minor_version = 3,
-		.is_backward_compatible = 0,
-		.is_forward_compatible = 0,
-		.red_bits = 8,
-		.green_bits = 8,
-		.blue_bits = 8,
-		.alpha_bits = 8,
-		.depth_bits = 24,
-		.stencil_bits = 8,
-		.is_debug = 1,
-		.has_multi_sampling = 1,
-		.num_multi_samples = 8
-	};
+	smol_frame_gl_spec_t gl_spec = smol_init_gl_spec(3, 3, SMOL_TRUE, SMOL_FALSE, 8, SMOL_TRUE);
 
 	smol_frame_config_t frame_config = {
 		.width = 800,
