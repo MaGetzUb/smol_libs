@@ -39,14 +39,14 @@ If you need to include this file in multiple source files, add empty .c
 file into your project called 'smol_frame.c' for example, and add the 
 code lines from above the 'int main()' code.
 
-On Windows and linux, if you include this header, you don't have to link anything a
+On Windows and linux, if you include this header, you don't have to link anything
 additional to the gcc arguments. You can just do this:
 gcc main.c -o main 
 
 And run:
 ./main
 
-NOTE: Linux does need the libx11-dev package though for the X11 related headers though.
+NOTE: Linux does need the libx11-dev package for the X11 related headers though.
 
 XCB is bit more cumbersome, because you need these packages:
 - libxcb-devel
@@ -1013,7 +1013,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 
 		HDC dc = GetDC(wnd);
-		smol_frame_gl_spec_t* gl_spec = config->gl_spec;
+		const smol_frame_gl_spec_t* gl_spec = config->gl_spec;
 		
 		int has_gl_arb_functionality = (smol_wglChoosePixelFormatARB && smol_wglCreateContextAttribsARB && smol_wglGetPixelFormatAttribfvARB && smol_wglGetPixelFormatAttribivARB);
 
@@ -2852,8 +2852,6 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		EGL_ASSERT;
 
 
-
-		
 		eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
 
 
