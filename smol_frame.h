@@ -122,6 +122,7 @@ Contributions:
 #	endif 
 #	include <unistd.h>
 #	include <dlfcn.h>
+#	include <signal.h>
 #	if defined(SMOL_FRAME_BACKEND_XCB)
 #		include <xcb/xcb.h>
 #		include <xcb/xcb_icccm.h>
@@ -157,7 +158,16 @@ typedef struct __GLXcontextRec *GLXContext;
 #	endif 
 //TODO:
 #	error Mac OS backend not implemented yet!
+#elif defined(__EMSCRIPTEN__)
+#	define SMOL_PLATFORM_WEB
+#	include <emscripten.h>
+#	include <emscripten/html5.h>
+#	include <EGL/egl.h>
+#	include <EGL/eglext.h>
 #endif 
+#include <stdio.h>
+#include <stdlib.h>
+#include <malloc.h>
 
 #define SMOL_TRUE 1
 #define SMOL_FALSE 0
@@ -207,6 +217,19 @@ smol_frame_t* smol_frame_create(int width, int height, const char* title);
 //Returns: int -- containing 1 if closed, 0 if not
 int smol_frame_is_closed(smol_frame_t* frame);
 
+//smol_frame_width - Returns the width of the frame
+//Arguments:
+// - smol_frame_t* frame - Whose width h is qureried
+//Returns: int -- containing the frame width
+int smol_frame_width(smol_frame_t* frame);
+
+
+//smol_frame_height - Returns the width of the frame
+//Arguments:
+// - smol_frame_t* frame - Whose width h is qureried
+//Returns: int -- containing the frame width
+int smol_frame_height(smol_frame_t* frame);
+
 //smol_frame_destroy - Destroys a frame
 //Arguments: 
 // - smol_frame_t* frame -- A handle to the frame to be destroyed
@@ -230,10 +253,16 @@ void smol_frame_update(smol_frame_t* frame);
 // - const char* title	 -- The window title
 void smol_frame_set_title(smol_frame_t* frame, const char* title);
 
+//smol_frame_set_cursor_visiblity - Sets the mouse cursor hidden or visible
+//Arguments:
+// - smol_frame_t* -- A frame that's the cursor hiding is applied
+// - int is_visible -- If not true, cursor is hidden
+void smol_frame_set_cursor_visibility(smol_frame_t* frame, int hidden);
+
 //smol_frame_blit_pixels - Blits pixels to frame 
 //Arguments: 
 // - smol_frame_t* frame  -- A window that's being drawn to
-// - unsigned int* pixBuf -- A pointer to pixel buffer, pixels are in order of XXRRGGBB, at least on windows.
+// - unsigned int* pixBuf -- A pointer to pixel buffer, pixels are in LSB order of R,G,B,A.
 // - int pixBufWidth      -- Width of the pixel buffer
 // - int pixBufHeight     -- Height of the pixel buffer
 // - int dstX             -- Copy destination location on x-axis
@@ -260,15 +289,15 @@ void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* eventQu
 
 
 //smol_init_gl_spec - Initializes smol_frame_gl_spec_t structure (R,G,B,A,Stencil bits wil lbe defaulted to 8, and depth to 24)
-//Arguments:
-// - int major_version         -- Major OpenGL version eg. 4
-// - int minor_version         -- Minor OpenGL version eg. 6
-// - int is_core_profile       -- Does the created context use Core OpenGL profile? If 0, context is backwards compatible
-// - int is_forward_compatible -- Is the created context forward compatible?
-// - int multisamples          -- Is the context capable of multisampling in the window frame buffer? Values equal or over 4 will enable multisampling
-// - int is_debug              -- Does the context have support for debug callbacks
+//Arguments: 
+// - int major_version          -- Major OpenGL version eg. 4
+// - int minor_version          -- Minor OpenGL version eg. 6
+// - int is_backward_compatible -- Is the created context backward compatible?
+// - int is_forward_compatible  -- Is the created context forward compatible?
+// - int multisamples           -- Is the context capable of multisampling in the window frame buffer? Values equal or over 4 will enable multisampling
+// - int is_debug               -- Does the context have support for debug callbacks
 //Returns: smol_frame_gl_spec_t - containing the prefilled gl spec strucutre.
-smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_core_profile, int is_forward_compatible, int multisamples, int is_debug);
+smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_backward_compatible, int is_forward_compatible, int multisamples, int is_debug);
 
 //smol_frame_gl_swap_buffers - Swaps opengl buffers
 //Arguments:
@@ -287,6 +316,11 @@ smol_gl_context_t smol_frame_get_gl_context(smol_frame_t* frame);
 // - const char* func  -- A name of the function to load.  
 //Returns: void* containing the OpenGL function handle.
 void* smol_gl_get_proc_address(const char* func);
+
+//smol_gl_set_vsync - Sets VSync with SwapIntervalEXT
+//Arguments 
+// - int enabled -- A boolean for setting VSync on / off
+void smol_gl_set_vsync(int enabled);
 
 #if defined(SMOL_PLATFORM_WINDOWS)
 
@@ -405,7 +439,10 @@ typedef struct _smol_frame_config_t {
 	int height;
 	const char* title;
 	unsigned int flags;
-	smol_frame_t* parent;
+	union {
+		smol_frame_t* parent;
+		const char* web_element;
+	};
 	const smol_frame_gl_spec_t* gl_spec;
 } smol_frame_config_t;
 
@@ -483,8 +520,9 @@ typedef enum {
 #		define SMOL_BREAKPOINT __debugbreak //MSVC uses this
 #	endif 
 #else 
+#	define SMOL_BREAKPOINT_HACK() for(;0;)
 #	ifndef SMOL_BREAKPOINT
-#		define SMOL_BREAKPOINT __builtin_trap //Clang and GCC uses this, AFAIK
+#		define SMOL_BREAKPOINT raise(SIGTRAP); SMOL_BREAKPOINT_HACK
 #	endif
 #endif 
 
@@ -517,7 +555,7 @@ typedef struct _smol_event_queue_t {
 	int refs;
 } smol_event_queue_t;
 
-#if !defined(SMOL_PLATFORM_WINDOWS)
+#if !(defined(SMOL_PLATFORM_WINDOWS) || defined(SMOL_PLATFORM_WEB))
 //This is kind of analog to Window's DC (device context)
 typedef struct {
 #if	 defined(SMOL_FRAME_BACKEND_XCB)
@@ -548,8 +586,14 @@ typedef struct _smol_gl_context_t {
 #else 
 typedef struct _smol_gl_context_t {
 	GLXContext context;
-};
+} smol_gl_context_t;
 #endif 
+#elif defined(SMOL_PLATFORM_WEB)
+typedef struct _smol_gl_context_t {
+	EGLDisplay display;
+	EGLSurface surface;
+	EGLContext context;
+};
 #endif 
 
 typedef struct _smol_frame_t {
@@ -574,6 +618,8 @@ typedef struct _smol_frame_t {
 	struct xkb_state* kbstate;
 #endif 
 	smol_software_renderer_t* renderer;
+#elif defined(SMOL_PLATFORM_WEB)
+	const char* element;
 #endif 
 	int width;
 	int height;
@@ -684,11 +730,11 @@ int smol_event_queue_pop_back(smol_event_queue_t* queue, smol_frame_event_t* eve
 
 #pragma region Platform agnostic functions
 
-smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_core_profile, int is_forward_compatible, int multisamples, int is_debug) {
+smol_frame_gl_spec_t smol_init_gl_spec(int major_version, int minor_version, int is_backward_compatible, int is_forward_compatible, int multisamples, int is_debug) {
 	smol_frame_gl_spec_t result = {0};
 	result.major_version = major_version;
 	result.minor_version = minor_version;
-	result.is_backward_compatible = !is_core_profile;
+	result.is_backward_compatible = is_backward_compatible;
 	result.is_forward_compatible = is_forward_compatible;
 	result.is_debug = is_debug;
 	result.red_bits = 8;
@@ -730,6 +776,15 @@ int smol_frame_acquire_event(smol_frame_t* frame, smol_frame_event_t* event) {
 int smol_frame_is_closed(smol_frame_t* frame) {
 	return frame->should_close;
 }
+
+int smol_frame_width(smol_frame_t* frame) {
+	return frame->width;
+}
+
+int smol_frame_height(smol_frame_t* frame) {
+	return frame->height;
+}
+
 
 void smol_frame_set_event_queue(smol_frame_t* frame, smol_event_queue_t* evq) {
 	if(frame->event_queue) {
@@ -773,6 +828,7 @@ typedef HGLRC APIENTRY smol_wglCreateContext_proc(HDC);
 typedef BOOL APIENTRY smol_wglDeleteContext_proc(HGLRC);
 typedef BOOL APIENTRY smol_wglMakeCurrent_proc(HDC, HGLRC);
 typedef PROC APIENTRY smol_wglGetProcAddress_proc(LPCSTR);
+typedef PROC APIENTRY smol_wglSwapIntervalEXT_proc(int);
 
 typedef HGLRC APIENTRY smol_wglCreateContextAttribsARB_proc(HDC hDC, HGLRC hshareContext, const int *attribList);
 
@@ -896,6 +952,7 @@ smol_wglCreateContext_proc *smol_wglCreateContext = NULL;
 smol_wglDeleteContext_proc* smol_wglDeleteContext = NULL;
 smol_wglMakeCurrent_proc* smol_wglMakeCurrent = NULL;
 smol_wglGetProcAddress_proc* smol_wglGetProcAddress = NULL;
+smol_wglSwapIntervalEXT_proc* smol_wglSwapIntervalEXT = NULL;
 
 smol_wglCreateContextAttribsARB_proc* smol_wglCreateContextAttribsARB = NULL;
 
@@ -1000,6 +1057,8 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		result->frame_handle_win32 = wnd;
 		result->module_handle_win32 = smol__wnd_class.hInstance;
 		result->event_queue = smol_event_queue_create(2048);
+		result->width = config->width;
+		result->height = config->height;
 
 	} else {
 
@@ -1052,6 +1111,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 			smol_wglChoosePixelFormatARB = (smol_wglChoosePixelFormatARB_proc*)smol_wglGetProcAddress("wglChoosePixelFormatARB");
 			smol_wglGetPixelFormatAttribfvARB = (smol_wglGetPixelFormatAttribfvARB_proc*)smol_wglGetProcAddress("wglGetPixelFormatAttribfvARB");
 			smol_wglGetPixelFormatAttribivARB = (smol_wglGetPixelFormatAttribivARB_proc*)smol_wglGetProcAddress("wglGetPixelFormatAttribivARB");
+			smol_wglSwapIntervalEXT = (smol_wglSwapIntervalEXT_proc*)smol_wglGetProcAddress("wglSwapIntervalEXT");
 			has_gl_arb_functionality = (smol_wglChoosePixelFormatARB && smol_wglCreateContextAttribsARB && smol_wglGetPixelFormatAttribfvARB && smol_wglGetPixelFormatAttribivARB);
 
 			if(has_gl_arb_functionality) {
@@ -1097,11 +1157,14 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 					int ids[] = {
 						WGL_SAMPLE_BUFFERS_ARB,
 						WGL_SAMPLES_ARB,
+						WGL_DEPTH_BITS_ARB,
+						WGL_STENCIL_BITS_ARB
 					};
-					int values[2] = {0};
-					BOOL has_feature = smol_wglGetPixelFormatAttribivARB(dc, formats[i], 0, 2, ids, values);
+					int values[4] = {0};
+					BOOL has_feature = smol_wglGetPixelFormatAttribivARB(dc, formats[i], 0, 4, ids, values);
 					
-
+					if(values[2] != gl_spec->depth_bits || values[3] != gl_spec->stencil_bits)
+						continue;
 					if(values[0]) {
 						int diff = values[1] - gl_spec->num_multi_samples;
 						if(diff < 0) diff = -diff;
@@ -1115,7 +1178,11 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 							samples_diff = diff;
 							selected = i;
 						}
-						if(samples_diff == 0)
+						if(
+							samples_diff == 0 && 
+							values[3] == gl_spec->depth_bits && 
+							values[4] == gl_spec->stencil_bits
+						) 
 							break;
 					}
 					
@@ -1126,16 +1193,18 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 				printf("Failed to set pixel format! Error: %08x\n", GetLastError());
 			}
 
+			int profile_mask = WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
+			int context_flags = 0;
+			if(gl_spec->is_debug)              context_flags |= WGL_CONTEXT_DEBUG_BIT_ARB;
+			if(gl_spec->is_forward_compatible) context_flags |= WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
+
+			if(gl_spec->is_backward_compatible) profile_mask = WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+
 			int context_attribs[] = {
 				WGL_CONTEXT_MAJOR_VERSION_ARB, gl_spec->major_version,
 				WGL_CONTEXT_MINOR_VERSION_ARB, gl_spec->major_version,
-				WGL_CONTEXT_PROFILE_MASK_ARB, 
-					gl_spec->is_backward_compatible ? 
-						WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : 
-						WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-				WGL_CONTEXT_FLAGS_ARB, 
-					(gl_spec->is_debug ? WGL_CONTEXT_DEBUG_BIT_ARB : 0) | 
-					(gl_spec->is_forward_compatible ? WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB : 0),
+				WGL_CONTEXT_PROFILE_MASK_ARB, profile_mask,
+				WGL_CONTEXT_FLAGS_ARB, context_flags,
 				0
 			};
 
@@ -1176,6 +1245,10 @@ void* smol_gl_get_proc_address(const char* func) {
 	return smol_wglGetProcAddress(func);
 }
 
+void smol_gl_set_vsync(int enabled) {
+	smol_wglSwapIntervalEXT(enabled);
+}
+
 void smol_frame_destroy(smol_frame_t* frame) {
 
 	if(frame->gl.context) {
@@ -1204,6 +1277,10 @@ int smol_frame_mapkey(WPARAM key, LPARAM ext);
 int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
 	if(!frame->gl.context) return 0;
 	return smol_SwapBuffers(GetDC(frame->frame_handle_win32));
+}
+
+void smol_frame_set_cursor_visibility(smol_frame_t* frame, int is_visible) {
+	ShowCursor(is_visible);
 }
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -1511,16 +1588,22 @@ void smol_frame_blit_pixels(
 	int srcH
 ) {
 
-	BITMAPINFO bmi = { 0 };
-	bmi.bmiHeader.biSize = sizeof(bmi.bmiHeader);
-	bmi.bmiHeader.biWidth = width;
-	bmi.bmiHeader.biHeight = -height;
-	bmi.bmiHeader.biPlanes = 1;
-	bmi.bmiHeader.biBitCount = 32;
-	bmi.bmiHeader.biCompression = BI_RGB;
+	char bytes[sizeof(BITMAPINFO) + 24] = { 0 };
 
-	smol_StretchDIBits(GetDC(frame->frame_handle_win32), dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH, pixels, &bmi, DIB_RGB_COLORS, SRCCOPY);
+	BITMAPINFO* bmi = bytes;
+	bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
+	bmi->bmiHeader.biWidth = width;
+	bmi->bmiHeader.biHeight = -height;
+	bmi->bmiHeader.biPlanes = 1;
+	bmi->bmiHeader.biBitCount = 32;
+	bmi->bmiHeader.biCompression = BI_BITFIELDS;
+	*(((DWORD*)bmi->bmiColors)+0) = 0x000000FF;
+	*(((DWORD*)bmi->bmiColors)+1) = 0x0000FF00;
+	*(((DWORD*)bmi->bmiColors)+2) = 0x00FF0000;
+	*(((DWORD*)bmi->bmiColors)+3) = 0xFF000000;
 
+	smol_StretchDIBits(GetDC(frame->frame_handle_win32), dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH, pixels, bmi, DIB_RGB_COLORS, SRCCOPY);
+	
 }
 
 #endif 
@@ -1536,6 +1619,8 @@ int smol_frame_mapkey(int key);
 
 Atom smol__wm_delete_window_atom;
 Atom smol__frame_handle_atom;
+Cursor smol__frame_empty_cursor;
+void* smol__X11_so;
 
 #ifndef APIENTRY
 #define APIENTRY
@@ -1745,8 +1830,10 @@ typedef Atom smol_XInternAtom_proc(Display* display, _Xconst char* atom_name, Bo
 typedef Status smol_XSetWMProtocols_proc(Display* display, Window window, Atom* protocols, int count);
 typedef int smol_XStoreName_proc(Display* display, Window window, _Xconst char* window_name);
 typedef XIM smol_XOpenIM_proc(Display* display, struct _XrmHashBucketRec* rdb, char* res_name, char* res_class);
-typedef XImage* smol_XCreateImage_proc(Display* display, Visual* visual, unsigned int depth, int format, int offset, char* data, unsigned int width, unsigned int height, int bitmap_pad, int bytes_per_line);
+typedef XImage* smol_XCreateImage_proc(Display* display, Visual* visual, unsigned int depth, int format, int current_offset, char* data, unsigned int width, unsigned int height, int bitmap_pad, int bytes_per_line);
+typedef int smol_XDestroyImage_proc(XImage* image);
 typedef GC smol_XCreateGC_proc(Display* display, Drawable drawable, unsigned long valuemask, XGCValues* values);
+typedef int smol_XFreeGC_proc(Display* display, GC gc);
 typedef Status smol_XGetIMValues_proc(XIM im, ...) _X_SENTINEL(0);
 typedef XIC smol_XCreateIC_proc(XIM im, ...) _X_SENTINEL(0);
 typedef void smol_XSetICFocus_proc(XIC  ic);
@@ -1766,7 +1853,14 @@ typedef int smol_XPending_proc(Display* display);
 typedef XSizeHints* smol_XAllocSizeHints_proc(void);
 typedef int smol_XPutImage_proc(Display* display, Drawable d, GC gc, XImage* image, int src_x, int src_y, int dest_x, int dest_y, unsigned int width, unsigned int height);
 
-void* smol__X11_so;
+typedef Pixmap smol_XCreatePixmap_proc(Display *display, Drawable d, unsigned int width, unsigned int height, unsigned int depth);
+typedef void smol_XFreePixmap_proc(Display* display, Pixmap pixmap);
+typedef Cursor smol_XCreatePixmapCursor_proc(Display *display, Pixmap source, Pixmap mask, XColor *foreground_color, XColor *background_color, unsigned int x, unsigned int y);
+typedef void smol_XFreeCursor_proc(Display* display, Cursor cursor);
+typedef void smol_XDefineCursor_proc(Display *display, Window w, Cursor cursor);
+typedef void smol_XUndefineCursor_proc(Display *display, Window w);
+
+
 
 smol_XOpenDisplay_proc* smol_XOpenDisplay;
 smol_XCloseDisplay_proc* smol_XCloseDisplay;
@@ -1781,7 +1875,9 @@ smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
 smol_XStoreName_proc* smol_XStoreName;
 smol_XOpenIM_proc* smol_XOpenIM;
 smol_XCreateImage_proc* smol_XCreateImage;
+smol_XDestroyImage_proc* smol_XDestroyImage;
 smol_XCreateGC_proc* smol_XCreateGC;
+smol_XFreeGC_proc* smol_XFreeGC;
 smol_XOpenDisplay_proc* smol_XOpenDisplay;
 smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
 smol_XCreateWindow_proc* smol_XCreateWindow;
@@ -1813,6 +1909,14 @@ smol_Xutf8LookupString_proc* smol_Xutf8LookupString;
 smol_XPending_proc* smol_XPending;
 smol_XPutImage_proc* smol_XPutImage;
 
+smol_XCreatePixmap_proc* smol_XCreatePixmap;
+smol_XFreePixmap_proc* smol_XFreePixmap;
+smol_XCreatePixmapCursor_proc* smol_XCreatePixmapCursor;
+smol_XFreeCursor_proc* smol_XFreeCursor;
+smol_XDefineCursor_proc* smol_XDefineCursor;
+smol_XUndefineCursor_proc* smol_XUndefineCursor;
+
+
 typedef XVisualInfo* smol_glXGetVisualFromFBConfig_proc(Display* display, Window window);
 typedef void smol_glXMakeCurrent_proc(Display* display, Window window, GLXContext context);
 typedef XVisualInfo* smol_glXChooseFBConfig_proc(Display* display, int screen, const int* attribs, int* result);
@@ -1820,14 +1924,16 @@ typedef void* smol_glXGetProcAddress_proc(unsigned char* proc);
 typedef int smol_glXGetFBConfigAttrib_proc(Display* display, GLXFBConfig config, int attribute, int* value);
 typedef void smol_glXSwapBuffers_proc(Display* display, Window window);
 typedef GLXContext smol_glXCreateContextAttribsARB_proc(Display *dpy, GLXFBConfig config,  GLXContext share_context, Bool direct, const int *attrib_list);
+typedef void smol_glxSwapIntervalEXT_proc(int);
 
 smol_glXGetVisualFromFBConfig_proc* smol_glXGetVisualFromFBConfig = NULL;
 smol_glXMakeCurrent_proc* smol_glXMakeCurrent = NULL;
 smol_glXGetProcAddress_proc* smol_glXGetProcAddress = NULL;
-smol_glXChooseFBConfig_proc* glXChooseFBConfig = NULL;
+smol_glXChooseFBConfig_proc* smol_glXChooseFBConfig = NULL;
 smol_glXGetFBConfigAttrib_proc* smol_glXGetFBConfigAttrib = NULL;
 smol_glXSwapBuffers_proc* smol_glXSwapBuffers = NULL;
 smol_glXCreateContextAttribsARB_proc* smol_glXCreateContextAttribsARB = NULL;
+smol_glxSwapIntervalEXT_proc* smol_glXSwapIntervalEXT = NULL;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	XDestroyImage(renderer->image);
@@ -1869,7 +1975,7 @@ smol_software_renderer_t* smol_renderer_create(smol_frame_t* frame) {
 			}
 		} 
 
-		XDestroyImage(frame->renderer->image);
+		smol_XDestroyImage(frame->renderer->image);
 	
 
 	} else {
@@ -1905,8 +2011,10 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		smol_XStoreName = (smol_XStoreName_proc*)dlsym(smol__X11_so, "XStoreName");
 		smol_XOpenIM = (smol_XOpenIM_proc*)dlsym(smol__X11_so, "XOpenIM");
 		smol_XCreateImage = (smol_XCreateImage_proc*)dlsym(smol__X11_so, "XCreateImage"); 
+		smol_XDestroyImage = (smol_XDestroyImage_proc*)dlsym(smol__X11_so, "XDestroyImage");
 		smol_XPutImage = (smol_XPutImage_proc*)dlsym(smol__X11_so, "XPutImage");
 		smol_XCreateGC = (smol_XCreateGC_proc*)dlsym(smol__X11_so, "XCreateGC"); 
+		smol_XFreeGC = (smol_XFreeGC_proc*)dlsym(smol__X11_so, "XFreeGC");
 		smol_XOpenDisplay = (smol_XOpenDisplay_proc*)dlsym(smol__X11_so, "XOpenDisplay"); 
 		smol_XGetWindowAttributes = (smol_XGetWindowAttributes_proc*)dlsym(smol__X11_so, "XGetWindowAttributes"); 
 		smol_XCreateWindow = (smol_XCreateWindow_proc*)dlsym(smol__X11_so, "XCreateWindow"); 
@@ -1935,8 +2043,17 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		smol_XLookupKeysym = (smol_XLookupKeysym_proc*)dlsym(smol__X11_so, "XLookupKeysym"); 
 		smol_Xutf8LookupString = (smol_Xutf8LookupString_proc*)dlsym(smol__X11_so, "Xutf8LookupString"); 
 		smol_XPending = (smol_XPending_proc*)dlsym(smol__X11_so, "XPending"); 
+		
+		smol_XCreatePixmap = (smol_XCreatePixmap_proc*)dlsym(smol__X11_so, "XCreatePixmap");
+		smol_XFreePixmap = (smol_XFreePixmap_proc*)dlsym(smol__X11_so, "XFreePixmap");
+		smol_XCreatePixmapCursor = (smol_XFreePixmap_proc*)dlsym(smol__X11_so, "XCreatePixmapCursor");
+		smol_XFreeCursor = (smol_XFreeCursor_proc*)dlsym(smol__X11_so, "XFreeCursor");
+		smol_XDefineCursor = (smol_XDefineCursor_proc*)dlsym(smol__X11_so, "XDefineCursor");
+		smol_XUndefineCursor = (smol_XUndefineCursor_proc*)dlsym(smol__X11_so, "XUndefineCursor");
+
 	}
 
+	//XSetError
 	
 	Display* display = smol_XOpenDisplay(NULL);
 	Window parentWindow = None;
@@ -1971,10 +2088,6 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 		ButtonMotionMask    | FocusChangeMask
 	);
 
-	/*
-	XCreateWindow(display, parent, x, y, width, height, border_width, depth, 
-                       class, visual, valuemask, attributes)
-	*/
 	result_window = smol_XCreateWindow(
 		display, 
 		parentWindow, 
@@ -2062,7 +2175,7 @@ XChangeProperty(
 
 		smol_frame_gl_spec_t* spec = config->gl_spec;
 		
-		int initialized = (smol_glXGetProcAddress && smol_glXGetVisualFromFBConfig && glXChooseFBConfig && smol_glXSwapBuffers && smol_glXCreateContextAttribsARB);
+		int initialized = (smol_glXGetProcAddress && smol_glXGetVisualFromFBConfig && smol_glXChooseFBConfig && smol_glXSwapBuffers && smol_glXCreateContextAttribsARB);
 		if(!initialized) {
 			void* libgl = dlopen("libGL.so", RTLD_NOW);
 			if(libgl == NULL) libgl = dlopen("libGL.so.1", RTLD_NOW);
@@ -2070,28 +2183,29 @@ XChangeProperty(
 			SMOL_ASSERT("Couldn't load libGL.so dynamically!" && libgl);
 
 			smol_glXGetVisualFromFBConfig = (smol_glXGetVisualFromFBConfig_proc*)dlsym(libgl, "glXGetVisualFromFBConfig");
-			glXChooseFBConfig = (smol_glXChooseFBConfig_proc*)dlsym(libgl, "glXChooseFBConfig");
+			smol_glXChooseFBConfig = (smol_glXChooseFBConfig_proc*)dlsym(libgl, "glXChooseFBConfig");
 			smol_glXMakeCurrent = (smol_glXMakeCurrent_proc*)dlsym(libgl, "glXMakeCurrent");
 			smol_glXGetFBConfigAttrib = (smol_glXGetFBConfigAttrib_proc*)dlsym(libgl, "glXGetFBConfigAttrib");
 			smol_glXGetProcAddress = (smol_glXGetProcAddress_proc*)dlsym(libgl, "glXGetProcAddress");
 		 	smol_glXSwapBuffers = (smol_glXSwapBuffers_proc*)dlsym(libgl, "glXSwapBuffers");
 			
 			smol_glXCreateContextAttribsARB = smol_glXGetProcAddress((unsigned char*)"glXCreateContextAttribsARB");
-			
+			smol_glXSwapIntervalEXT = smol_glXGetProcAddress((unsigned char*)"glXSwapIntervalEXT");
+
 		}
 
 		int attribs[64] = {
-			GLX_X_RENDERABLE, 1, //0, 1
-			GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT, //2, 3
-			GLX_RENDER_TYPE, GLX_RGBA_BIT, //4, 5
-			GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR, //6, 7
-			GLX_RED_SIZE, spec->red_bits, //8, 9
-			GLX_GREEN_SIZE, spec->green_bits, //10, 11
-			GLX_BLUE_SIZE, spec->blue_bits, //12, 13
-			GLX_ALPHA_SIZE, spec->alpha_bits, //14, 15
-			GLX_DEPTH_SIZE, spec->depth_bits, //16, 17
-			GLX_STENCIL_SIZE, spec->stencil_bits, // 18, 19
-			GLX_DOUBLEBUFFER, 1, //20, 21
+			GLX_X_RENDERABLE, 1,
+			GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+			GLX_RENDER_TYPE, GLX_RGBA_BIT,
+			GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
+			GLX_DOUBLEBUFFER, 1, 
+			GLX_RED_SIZE, spec->red_bits,
+			GLX_GREEN_SIZE, spec->green_bits,
+			GLX_BLUE_SIZE, spec->blue_bits,
+			GLX_ALPHA_SIZE, spec->alpha_bits,
+			GLX_DEPTH_SIZE, spec->depth_bits,
+			GLX_STENCIL_SIZE, spec->stencil_bits,
 			0, 0
 		};
 
@@ -2103,7 +2217,7 @@ XChangeProperty(
 		GLXFBConfig* config = NULL;
 		{
 			int count = 0;
-			GLXFBConfig* configs = glXChooseFBConfig(display, DefaultScreen(display), attribs, &count);
+			GLXFBConfig* configs = smol_glXChooseFBConfig(display, DefaultScreen(display), attribs, &count);
 			int bestFbc = -1; 
 			int bestSampleCount = 999;
 			SMOL_ASSERT("No configurations!" && count);
@@ -2134,6 +2248,7 @@ XChangeProperty(
 			}
 
 			config = configs[bestFbc];
+			smol_XFree(configs);
 		}
 
 		XVisualInfo* visualinfo = smol_glXGetVisualFromFBConfig(display, config);
@@ -2165,6 +2280,13 @@ XChangeProperty(
 
 	}
 
+	if(!smol__frame_empty_cursor) {
+	
+		Pixmap blank = smol_XCreatePixmap(display, DefaultRootWindow(display), 1, 1, 1);
+		XColor dummy = { 0 };
+		smol__frame_empty_cursor = smol_XCreatePixmapCursor(display, blank, blank, &dummy, &dummy, 0, 0);
+
+	}
 	//result->window_attributes = setAttributes;
 	//result->root_window = rootWindow;
 
@@ -2191,6 +2313,13 @@ void* smol_gl_load_symbol(const char* func) {
 	return smol_glXGetProcAddress(func);
 }
 
+void smol_gl_set_vsync(int enabled) {
+	if(!smol_glXSwapIntervalEXT) {
+		fputs("OpenGL context not initialized!", stderr);
+		return;
+	}
+	smol_glXSwapIntervalEXT(enabled);	
+}
 
 void smol_frame_destroy(smol_frame_t* frame) {
 
@@ -2203,6 +2332,15 @@ void smol_frame_destroy(smol_frame_t* frame) {
 	if(frame->renderer) smol_renderer_destroy(frame->renderer);
 	SMOL_FREE(frame);
 
+}
+
+void smol_frame_set_cursor_visibility(smol_frame_t* frame, int visibility) {
+	if(visibility == SMOL_FALSE) {
+		smol_XDefineCursor(frame->display_server_connection, frame->frame_window, smol__frame_empty_cursor);
+	} else {
+		smol_XUndefineCursor(frame->display_server_connection, frame->frame_window);
+	}
+	smol_XFlush(frame->display_server_connection);
 }
 
 //Can be passed null, this will pump messages to every window (on windows at least)
@@ -2333,8 +2471,11 @@ void smol_frame_update(smol_frame_t* frame) {
 				event.mouse.dx = xevent.xmotion.x - frame->old_mouse_x;
 				event.mouse.dy = xevent.xmotion.y - frame->old_mouse_y;
 
+
 				event.mouse.x = xevent.xmotion.x;
 				event.mouse.y = xevent.xmotion.y;
+				frame->old_mouse_x = event.mouse.x;
+				frame->old_mouse_y = event.mouse.y;
 				smol_event_queue_push_back(frame->event_queue, &event);
 			} break;
 			case ButtonPress:
@@ -2416,13 +2557,20 @@ void smol_frame_blit_pixels(
 	int endX = (dstX + dstW) > renderer->width ? (dstX + dstW - renderer->width) : dstW; 
 	int endY = (dstY + dstH) > renderer->height ? (dstY + dstH - renderer->height) : dstH;
 
+	Visual *visual = DefaultVisual(frame->display_server_connection, DefaultScreen(frame->display_server_connection));
+
 	for(int y = startY; y < endY; y++) {
 		int sY = srcY + ((srcH * y) / dstH);
 		int dY = dstY + y;
 		for(int x = startX; x < endX; x++) {
 			int sX = srcX + ((srcW * x) / dstW);
 			int dX = dstX + x;
-			renderer->pixel_data[dX + dY * renderer->width] = pixels[sX + sY * frame->renderer->width];
+			unsigned int pixel = pixels[sX + sY * width];
+			renderer->pixel_data[dX + dY * renderer->width] = 
+				((((pixel >> 0x00) & 0xFF) * visual->red_mask) / 255) |
+				((((pixel >> 0x08) & 0xFF) * visual->green_mask) / 255) |
+				((((pixel >> 0x10) & 0xFF) * visual->blue_mask) / 255) 
+			;
 		}
 	}
 
@@ -3108,6 +3256,84 @@ void smol_frame_blit_pixels(
 
 #endif 
 #pragma endregion 
+
+#ifdef SMOL_PLATFORM_WEB
+
+smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
+
+	smol_frame_t* frame = (smol_frame_t*)SMOL_ALLOC_INSTANCE(smol_frame_t);
+	*frame = (smol_frame_t){ 0 };
+	frame->element = config->web_element != NULL ? config->web_element : "canvas";
+	frame->event_queue = smol_event_queue_create(2048);
+
+	emscripten_set_canvas_element_size(NULL, config->width, config->height);
+
+	if(config->gl_spec) {
+		
+		//emscripten_webgl_create_context();
+	}
+
+
+	return frame;
+
+}
+
+void smol_frame_set_title(smol_frame_t* frame, const char* title) {
+	(void)frame;
+	(void)title;
+}
+
+void smol_frame_update(smol_frame_t* frame) {
+	(void)frame;
+}
+
+void smol_frame_set_cursor_visibility(smol_frame_t* frame, int visibility) {
+	(void)frame;
+	(void)visibility;
+}
+
+void smol_frame_destroy(smol_frame_t* frame) {
+	(void)frame;
+}
+
+//void smol_frame_blit_pixels(smol_frame_t* frame, unsigned int* pixBuf, int pixBufWidth, int pixBufHeight, int dstX, int dstY, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH) {
+//	
+//}
+void smol_frame_blit_pixels(
+	smol_frame_t* frame, 
+	unsigned int* pixBuf, 
+	int pixBufWidth, 
+	int pixBufHeight, 
+	int dstX, 
+	int dstY, 
+	int dstW, 
+	int dstH, 
+	int srcX, 
+	int srcY, 
+	int srcW, 
+	int srcH
+) {
+	EM_ASM({
+
+		var element = Module.UTF8ToString($0);
+		var buffer = $1;
+		var pixBufW = $2;
+		var pixBufH = $3;
+		var srcX = $4;
+		var srcY = $5;
+		var dstX = $6;
+		var dstY = $7;
+		var dstW = $8;
+		var dstH = $9;
+
+		const canvas = document.getElementById(Module.UTF8ToString(element));
+		const ctx = canvas.getContext("2d");
+		const uintBuffer = new Uint32Array(Module.HEAPU32.buffer, buffer + (srcX + srcY * pixBufW), srcW * srcH);
+		ctx.putImageData(new ImageData(uintBuffer, srcW, scrH), dstX, dstY, 0, 0, dstW, dstH);
+	}, frame->element, pixBuf, pixBufWidth, pixBufHeight, srcX, srcY, dstX, dstY, dstW, dstH);
+}
+
+#endif 
 
 #pragma region X11 XCB common
 #if (defined(SMOL_FRAME_BACKEND_XCB) || defined(SMOL_FRAME_BACKEND_X11)) && defined(SMOL_PLATFORM_LINUX)
