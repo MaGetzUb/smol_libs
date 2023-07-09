@@ -4,10 +4,12 @@
 
 #pragma GCC diagnostic ignored "-Wmissing-braces"
 
+#ifndef __EMSCRIPTEN__
 #define GLBIND_IMPLEMENTATION
 #include "thirdparty/glbind.h"
+#endif 
 
-//#define SMOL_FRAME_BACKEND_XCB
+#define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
@@ -47,20 +49,11 @@ const char fsh[] =
 	"}"
 ;
 
-//#define gl_assert              \
-//do {                           \
-//	GLenum error = glGetError(); \
-//	if(error != GL_NO_ERROR) {   \
-//		printf("%d\n", error);   \
-//		SMOL_BREAKPOINT();       \
-//	}                            \
-//} while(0)
-
 int main() {
 
-
+#ifndef SMOL_PLATFORM_WEB
 	GLenum result = glbInit(NULL, NULL);
-
+#endif 
 	smol_frame_gl_spec_t gl_spec = smol_init_gl_spec(3, 3, SMOL_TRUE, SMOL_FALSE, 8, SMOL_TRUE);
 
 	smol_frame_config_t frame_config = {
@@ -205,7 +198,6 @@ int main() {
 
 		float rot = (smol_timer() - start_time)*6.283/30.;
 
-		glUseProgram(program);
 		for(smol_frame_event_t ev; smol_frame_acquire_event(frame, &ev);) {
 			if(ev.type == SMOL_FRAME_EVENT_RESIZE) {
 				glViewport(0, 0, ev.size.width, ev.size.height);
@@ -215,6 +207,7 @@ int main() {
 		}
 
 		
+		glUseProgram(program);
 		glUniform1fv(uniform_angle_location, 1, &rot);
 		glUniform2fv(uniform_aspect_location, 1, &aspect);
 		glBindVertexArray(vao);
