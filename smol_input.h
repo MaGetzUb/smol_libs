@@ -1,5 +1,5 @@
 /*
-Copyright � 2023 Marko Ranta (Discord: coderunner)
+Copyright © 2023 Marko Ranta (Discord: coderunner)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -188,6 +188,7 @@ int smol_inputs_update(smol_frame_event_t* event) {
 			smol__mouse_move_z = event->mouse.dw;
 			return 1;
 		break;
+		default: break;
 	}
 
 	return 0;
