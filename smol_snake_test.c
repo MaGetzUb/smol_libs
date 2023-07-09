@@ -4,7 +4,7 @@
 #include <malloc.h>
 #include <math.h>
 
-#define SMOL_FRAME_BACKEND_XCB
+//#define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
@@ -178,24 +178,28 @@ int main(int argc, char* argv[]) {
 			move_step -= dt;
 		}
 
-		olivec_fill(canvas, 0xFF000000AA);
+		olivec_fill(canvas, OLIVEC_RGBA(0x00,0x00,0xAA,0xFF));
 
 		#if 1
-		olivec_rect(canvas, 0, SCREEN_H-HUD_H, SCREEN_W, HUD_H, 0xFF444444);
-		olivec_rect(canvas, 0, SCREEN_H-HUD_H, SCREEN_W, 3, 0xFF888888);
+		olivec_rect(canvas, 0, SCREEN_H-HUD_H, SCREEN_W, HUD_H, OLIVEC_RGBA(0x44,0x44,0x44,0xFF));
+		olivec_rect(canvas, 0, SCREEN_H-HUD_H, SCREEN_W, 3, OLIVEC_RGBA(0x88,0x88,0x88,0xFF));
 
-		olivec_rect(canvas, pickup_x * SNAKE_SIZE, pickup_y * SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, 0xFFAA6644);
+		olivec_rect(canvas, pickup_x * SNAKE_SIZE, pickup_y * SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, OLIVEC_RGBA(0xAA,0x66,0x44,0xFF));
 
 		sprintf(guibuf, "Points: %d", (snek_len - 3));
-		olivec_text_(canvas, guibuf, 10, SCREEN_H-HUD_H+10, smol_font_, 1, 0xFFFFFF00);
+		olivec_text_(canvas, guibuf, 10, SCREEN_H-HUD_H+10, smol_font_, 1, OLIVEC_RGBA(0xFF,0xFF,0x00,0xFF));
 		sprintf(guibuf, "FPS: %d", fps);
-		olivec_text_(canvas, guibuf, 10, SCREEN_H-HUD_H+26, smol_font_, 1, 0xFFFFFF00);
+		olivec_text_(canvas, guibuf, 10, SCREEN_H-HUD_H+26, smol_font_, 1, OLIVEC_RGBA(0xFF,0xFF,0x00,0xFF));
 
 		for(int i = 0; i < snek_len; i++) {
-			uint32_t col = (128.+cos((double)i * 6.283/5.0)*63.0);
-			col |= ((col * 3) / 4) << 8;
-			col |= 0xFF000000;
-			olivec_rect(canvas, snek_pieces[i].x*SNAKE_SIZE, snek_pieces[i].y*SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, i == 0 ? 0xFFAACCFF : col);
+			//uint32_t col = (128.+cos((double)i * 6.283/5.0)*63.0);
+			//col |= ((col * 3) / 4) << 8;
+			//col |= OLIVEC_RGBA(0x00,0x00,0x00,0xFF);
+			unsigned char g = (128. + cos((double)i * 6.283 / 5.0) * 63.0);
+			unsigned char b = ((g * 3) / 4);
+			olivec_rect(canvas, snek_pieces[i].x*SNAKE_SIZE, snek_pieces[i].y*SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, i == 0 ? 
+				OLIVEC_RGBA(0xAA,0xCC,0xFF,0xFF) : 
+				OLIVEC_RGBA(0, g, b, 255));
 		}
 		#else 
 		
@@ -203,7 +207,7 @@ int main(int argc, char* argv[]) {
 		for(int j = 0; j < ARENA_H; j++)
 		for(int i = 0; i < ARENA_W; i++)
 		{
-			olivec_rect(canvas, i * SNAKE_SIZE, j * SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, occupied_arena[i + j * ARENA_W] ? 0xFFFFFFFF : 0xFF000000);
+			olivec_rect(canvas, i * SNAKE_SIZE, j * SNAKE_SIZE, SNAKE_SIZE, SNAKE_SIZE, occupied_arena[i + j * ARENA_SIDE] ? OLIVEC_RGBA(0xFF,0xFF,0xFF,0xFF) : OLIVEC_RGBA(0x00,0x00,0x00,0xFF));
 		}
 
 		#endif 
