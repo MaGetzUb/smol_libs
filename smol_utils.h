@@ -1,5 +1,5 @@
 /*
-Copyright � 2023 Marko Ranta (Discord: coderunner)
+Copyright © 2023 Marko Ranta (Discord: coderunner)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -34,18 +34,58 @@ distribution.
 #	ifndef SMOL_PLATFORM_LINUX
 #		define SMOL_PLATFORM_LINUX
 #	endif 
+# 	define _XOPEN_SOURCE 500
+#	include <unistd.h>
+#	include <sys/types.h>
+#	include <sys/stat.h>
 #	include <sys/time.h>
+#	include <time.h>
+#	include <fcntl.h>
 #elif defined(__APPLE__)
 #	define SMOL_PLATFORM_MAC_OS
 //TODO:
 #	error Mac OS backend not implemented yet!
+#elif defined(__EMSCRIPTEN__)
+#	ifndef SMOL_PLATFORM_EMSCRIPTEN
+#		define SMOL_PLATFORM_EMSCRIPTEN
+#	endif 
+#	include <emscripten.h>
+#endif 
+#include <stdio.h>
+#include <stdlib.h>
+#include <malloc.h>
+
+#define SMOL_RAND_MAX 0x7FFFFFFF
+
+#if _WIN64
+typedef unsigned long long smol_size_t;
+#else 
+typedef unsigned int smol_size_t;
 #endif 
 
+#ifdef _MSC_VER
+#define SMOL_THREAD_LOCAL __declspec(thread)
+#	ifdef SMOL_INLINE
+#		define SMOL_INLINE __forceinline
+#	endif 
+#else 
+#	ifndef SMOL_INLINE
+#		define SMOL_INLINE inline __attribute__((always_inline)) 
+#	endif 
+#define SMOL_THREAD_LOCAL __thread
+#endif 
 //smol_timer - Returns high precision system up time in seconds on
 //             Windows, and high precision time since Unix epoch on Linux. 
 //Returns: double - containing seconds.microseconds since the last start 
 //                  of the computer (win32) or since unix epoch (on linux) 
 double smol_timer(); 
+
+//smol_read_entire_file - Opens a file and reads it into a buffer.
+//Arguments:
+// - const char* file_path    -- A path to a file
+// - unsigned long long* size -- A pointer to 64bit-uint containing number of bytes read
+//Returns: void* - a pointer to the buffer
+void* smol_read_entire_file(const char* file_path, smol_size_t* size);
 
 //smol_utf8_to_utf32 - Converts utf8 encoded character into utf32 codepoint
 //Arguments:
@@ -92,6 +132,34 @@ int smol_utf16_to_utf8(const unsigned short* utf16, int buf_len, char* utf8);
 // - unsigned short* utf16          -- the buffer where the result is stored
 //Returns: int                      -- number of utf16 symbols written
 int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16);
+
+//smol_randomize - Randomizes the random generator
+//Arguments:
+// - int seed                       -- The random seed
+void smol_randomize(unsigned int seed);
+
+//smol_rand - Returns a random integer between [0..SMOL_RAND_MAX)
+unsigned int smol_rand();
+
+//smol_randf - Returns a random float between [0..1)
+float smol_randf();
+
+//smol_rnd - Returns an exclusive random integer berween [minimum...maximum)
+//Arguments:
+// - int minimum - The lowest number in the range
+// - int maximum - The highhest number-1 in the range
+//Returns int - containing the random number
+int smol_rnd(int minimum, int maximum);
+
+//smol_rnd - Returns an exclusive random float berween [minimum...maximum)
+//Arguments:
+// - float minimum - The lowest number in the range
+// - float maximum - The highest number-epsilon in the range (epsilon = FLT_EPSILON)
+float smol_rndf(float minimum, float maximum);
+
+//float SMOL_INLINE smol_map(float value, float low, float high, float new_low, float new_high) {
+//	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
+//}
 
 #endif 
 
@@ -160,7 +228,103 @@ double smol_timer(void) {
 	return (double)tval.tv_sec + (double)tval.tv_usec * 1e-6; 
 }
 
+#elif defined(SMOL_PLATFORM_EMSCRIPTEN)
+
+double smol_timer(void) {
+	struct timespec spec;
+	clock_gettime(CLOCK_MONOTONIC, &spec);
+	return (double)spec.tv_sec + (double)(spec.tv_nsec) * 1e-9;
+}
+
 #endif 
+
+void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
+
+	void* buffer = NULL;
+
+#	ifdef _WIN32
+
+#	ifdef UNICODE
+	wchar_t path[512] = { 0 };
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, file_path, strlen(file_path), path, 512);
+	HANDLE file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#	else 
+	HANDLE file = CreateFile(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#endif 
+	
+	if(file == NULL) return NULL;
+		
+	DWORD high = 0;
+	DWORD low = GetFileSize(file, &high);
+	*size = ((smol_size_t)low | ((smol_size_t)high << 32ULL));
+		
+	buffer = malloc(size[0]+1);
+		
+	BYTE* byte_ptr = (BYTE*)buffer;
+	DWORD bytes_to_read = *size;
+	DWORD bytes_read = 0;
+	while(ReadFile(file, byte_ptr, (bytes_to_read - bytes_read), &bytes_read, NULL) && bytes_to_read) {
+		byte_ptr += bytes_read;
+		bytes_to_read -= bytes_read;
+	}
+	*byte_ptr = 0;
+	CloseHandle(file);
+
+#endif 
+
+#ifdef __linux__
+
+	struct stat file_stat; 
+
+	int fd = open(file_path, O_RDONLY);
+	
+	if(!fd) return NULL;
+
+	if(fstat(fd, &file_stat) == -1) {
+		close(fd);
+		return NULL;
+	}
+
+	buffer = malloc(file_stat.st_size+1);
+	unsigned char* byte_ptr = (unsigned char*)buffer;
+
+	ssize_t bytes_to_read = file_stat.st_size;
+	ssize_t bytes_read;
+	while((bytes_read = read(fd, byte_ptr, bytes_to_read)) > 0 && bytes_to_read) {
+		byte_ptr += bytes_read;
+		bytes_to_read -= bytes_read;
+	}
+
+	close(fd);
+
+	*byte_ptr = 0;
+#endif 
+
+#ifdef __EMSCRIPTEN__
+	FILE* file = NULL;
+	if((file = fopen(file_path, "r")) != NULL) {
+		
+		fseek(file, 0, SEEK_END);
+		
+		smol_size_t size = ftell(file);
+		
+		fseek(file, 0, SEEK_SET);
+		
+		buffer = malloc(size);
+		
+		fread((char*)buffer, 1, size, file);
+
+		fclose(file);
+	
+	}
+
+
+#endif 
+
+	return buffer;
+
+}
+
 
 //https://en.wikipedia.org/wiki/UTF-8#Encoding
 int smol_utf8_to_utf32(const char* utf8, unsigned int* utf32) {
@@ -300,6 +464,30 @@ int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16) {
 
 	return smol_utf32_to_utf16(utf32, buf_len, utf16);
 
+}
+
+unsigned int smol__rand_state;
+
+void smol_randomize(unsigned int seed) {
+	smol__rand_state = seed;
+}
+
+//Le zoinked from here https://www.sanfoundry.com/c-program-implement-linear-congruential-generator-pseudo-random-number-generation/
+unsigned int smol_rand() {
+	return (smol__rand_state = (smol__rand_state * 1103515245 + 12345) & SMOL_RAND_MAX);
+}
+
+float smol_randf() {
+	unsigned int bits = 0x3F800000 | (smol_rand() >> 8);
+	return (*((float*)&bits)) - 1.f;
+}
+
+int smol_rnd(int minimum, int maximum) {
+	return minimum + smol_rand() % (maximum - minimum);
+}
+
+float smol_rndf(float minimum, float maximum) {
+	return minimum + smol_randf() * (maximum - minimum);
 }
 
 #endif 
