@@ -3,10 +3,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include <locale.h>
 #include <ctype.h>
 
-#define SMOL_FRAME_BACKEND_XCB
+//#define SMOL_FRAME_BACKEND_XCB
 #define SMOL_FRAME_IMPLEMENTATION
 #include "smol_frame.h"
 
@@ -42,6 +43,7 @@ int main(int numArgs, const char* argv[]) {
 	SetConsoleOutputCP(CP_UTF8);
 #endif 
 	setlocale(LC_ALL, 0);
+	printf("Hello, world!\n");
 
 	smol_frame_t* frame = smol_frame_create(800, 600, "Smol Frame :)");
 
@@ -131,37 +133,19 @@ int main(int numArgs, const char* argv[]) {
 
 			smol_inputs_update(&event);
 
-			/*else if(event.type == SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN) {
-				printf("Mouse button (%d) down event at (%d, %d)\n", event.mouse.button, event.mouse.x, event.mouse.y);
-				break;
-			}
-			else if(event.type == SMOL_FRAME_EVENT_MOUSE_BUTTON_UP) {
-				printf("Mouse button (%d) up event at (%d, %d)\n", event.mouse.button, event.mouse.x, event.mouse.y);
-			}
-			else if(event.type == SMOL_FRAME_EVENT_MOUSE_MOVE) {
-				mouseX = event.mouse.x;
-				mouseY = event.mouse.y;
-			}
-			else if(event.type == SMOL_FRAME_EVENT_KEY_DOWN) {
-				if(event.key.code == SMOLK_RETURN)
-					puts("Return pressed\n");
-			}
-			else if(event.type == SMOL_FRAME_EVENT_KEY_UP) {
-				if(event.key.code == SMOLK_RETURN)
-					puts("Return released");
-			} else if(event.type == SMOL_FRAME_EVENT_MOUSE_VER_WHEEL) {
-				printf("Mouse wheel: %d (accum) %d (delta)\n", event.mouse.z, event.mouse.dz);
-			}
-			else if(event.type == SMOL_FRAME_EVENT_FOCUS_LOST) {
-				puts("Focus lost.");
-			}
-			else if(event.type == SMOL_FRAME_EVENT_FOCUS_GAINED) {
-				puts("Focus gained.");
-			}*/
-
 		}
 
-		olivec_fill(canvas, 0xFF0000AA);
+		olivec_fill(canvas, OLIVEC_RGBA(0, 0, 170, 255));//0xFF0000AA);
+
+		if(smol_mouse_hit(2)) {
+			smol_frame_set_cursor_visibility(frame, 0);
+		}
+
+
+		if(smol_mouse_up(2)) {
+			smol_frame_set_cursor_visibility(frame, 1);
+		}
+
 
 		if(smol_mouse_hit(1)) {
 			anchorX = smol_mouse_x();
@@ -174,25 +158,26 @@ int main(int numArgs, const char* argv[]) {
 		}
 
 		if(smol_key_down(SMOLK_SPACE)) {
-			olivec_rect(canvas, 250, 200, 75, 35, 0xFFCC88AA);
+			olivec_rect(canvas, 250, 200, 75, 35, OLIVEC_RGBA(136, 204, 255, 255));
 		}
 
 
 		if(red > 0.f) red -= 100.f * (float)dt; else red = 0.f;
 		if(blue > 0.f) blue -= 100.f * (float)dt; else blue = 0.f;
 	
+		//0xFFCCAA88
+		olivec_rect(canvas, 180, 150, 75, 30, OLIVEC_RGBA(136, 170, 255,255));
+		olivec_line(canvas, anchorX, anchorY, smol_mouse_x(), smol_mouse_y(), OLIVEC_RGBA(255,0,255, 255));
 
-		olivec_rect(canvas, 180, 150, 75, 30, 0xFFCCAA88);
-		olivec_line(canvas, anchorX, anchorY, smol_mouse_x(), smol_mouse_y(), 0xFFFF00FF);
-
-		olivec_circle(canvas, smol_mouse_x(), smol_mouse_y(), 10+smol_mouse_z()*2, 0xFF00CC00 | ((int)red) << 16 | (int)blue);
-		olivec_text(canvas, "hello, world!", 10, 10, smol_font, 1, 0xFF00FFCC);
-
+		//0xFF00CC00 | ((int)red) << 16 | (int)blue
+		olivec_circle(canvas, smol_mouse_x(), smol_mouse_y(), 10+smol_mouse_z()*2, OLIVEC_RGBA(((unsigned char)red), 204, ((unsigned char)blue), 255));
+		olivec_text(canvas, "hello, world!", 10, 10, smol_font, 1, OLIVEC_RGBA(204, 255, 0, 255));
+		/*0xFF00FFCC*/
 		snprintf(buf, 256, "Input: %s", input_buffer);
-		olivec_text(canvas, buf, 10, 200, smol_font, 1, 0xFF00FFCC);
+		olivec_text(canvas, buf, 10, 200, smol_font, 1, OLIVEC_RGBA(204, 255, 0, 255));
 
 		if(is_blinking) {
-			olivec_text(canvas, "_", 10+(strlen("Input: ")+input_cursor) * smol_font.width, 200, smol_font, 1, 0xFF00FFCC);
+			olivec_text(canvas, "_", 10+(strlen("Input: ")+input_cursor) * smol_font.width, 200, smol_font, 1, OLIVEC_RGBA(204, 255, 0, 255));
 		}
 		
 		blink_timer -= dt;
@@ -201,15 +186,17 @@ int main(int numArgs, const char* argv[]) {
 			blink_timer = 0.4;
 		}
 
-		olivec_text(canvas, "!\"#$%&'()*+,-./0123456789:;<=>?@", 10, 25, smol_font, 1, 0xFFAA00DD);
-		olivec_text(canvas, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 10, 45, smol_font, 1, 0xFFAA00DD);
-		olivec_text(canvas, "[\\]^_`", 10, 65, smol_font, 1, 0xFFAA00DD);
-		olivec_text(canvas, "abcdefghijklmnopqrstuvwxyz", 10, 85, smol_font, 1, 0xFFAA00DD);
-		olivec_text(canvas, "{|}~", 10, 105, smol_font, 1, 0xFFAA00DD);
+		//0xFFAA00DD
+		unsigned int color = OLIVEC_RGBA(221, 0, 170, 255);
+		olivec_text(canvas, "!\"#$%&'()*+,-./0123456789:;<=>?@", 10, 25, smol_font, 1, color);
+		olivec_text(canvas, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 10, 45, smol_font, 1, color);
+		olivec_text(canvas, "[\\]^_`", 10, 65, smol_font, 1, color);
+		olivec_text(canvas, "abcdefghijklmnopqrstuvwxyz", 10, 85, smol_font, 1, color);
+		olivec_text(canvas, "{|}~", 10, 105, smol_font, 1, color);
 
 
-		snprintf(buf, 256, "FPS: %d", fps);
-		olivec_text(canvas, buf, 0, 600-32, smol_font, 2, 0xFFCCFF00);
+		snprintf(buf, 256, "FPS: %d", fps); //0xFFCCFF00
+		olivec_text(canvas, buf, 0, 600-32, smol_font, 2, OLIVEC_RGBA(204, 255, 0, 255));
 
 		smol_frame_blit_pixels(frame, surface, 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
 
