@@ -162,6 +162,7 @@ typedef struct __GLXcontextRec *GLXContext;
 #	define SMOL_PLATFORM_WEB
 #	include <emscripten.h>
 #	include <emscripten/html5.h>
+#	include <emscripten/key_codes.h>
 #	include <EGL/egl.h>
 #	include <EGL/eglext.h>
 #endif 
@@ -518,9 +519,11 @@ typedef enum {
 #ifdef _MSC_VER
 #	ifndef SMOL_BREAKPOINT
 #		define SMOL_BREAKPOINT __debugbreak //MSVC uses this
-#	endif 
-#else 
-#	define SMOL_BREAKPOINT_HACK() for(;0;)
+#	endif
+#elif defined(SMOL_PLATFORM_WEB)
+#	define SMOL_BREAKPOINT() EM_ASM({ debugger; })
+#else
+#	define SMOL_BREAKPOINT_HACK() while(0)
 #	ifndef SMOL_BREAKPOINT
 #		define SMOL_BREAKPOINT raise(SIGTRAP); SMOL_BREAKPOINT_HACK
 #	endif
@@ -590,9 +593,7 @@ typedef struct _smol_gl_context_t {
 #endif 
 #elif defined(SMOL_PLATFORM_WEB)
 typedef struct _smol_gl_context_t {
-	EGLDisplay display;
-	EGLSurface surface;
-	EGLContext context;
+	EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context;
 };
 #endif 
 
@@ -3259,6 +3260,27 @@ void smol_frame_blit_pixels(
 
 #ifdef SMOL_PLATFORM_WEB
 
+EM_BOOL smol_mouse_event(int event_type, const EmscriptenMouseEvent* mouse_event, void* user_data);
+EM_BOOL smol_wheel_event(int event_type, const EmscriptenWheelEvent* event, void* user_data);
+EM_BOOL smol_key_event(int event_type, const EmscriptenKeyboardEvent *key_event, void *user_data);
+EM_BOOL smol_focus_event(int event_type, const EmscriptenFocusEvent* focus_event, void* user_data);
+EM_BOOL smol_fullscreen_event(int event_type, const EmscriptenFullscreenChangeEvent* fullscreen_event, void* user_data);
+//smol_key smol_frame_map_key(unsigned int vk, unsigned int location);
+//smol_key smol_frame_map_keycode(EM_UTF8 code[32]);
+
+EM_JS(void, smol_add_key, (const char* name, int value), {
+	const name_str = UTF8ToString(name);
+	Module.keymap[name_str] = value;
+	console.log("Added key: [" + name_str + "] = " + value);
+});
+
+EM_JS(smol_key, smol_frame_map_keycode, (const char* code), {
+	const name_str = UTF8ToString(code);
+	const value = Module.keymap[UTF8ToString(code)];
+	console.log("[" + name_str + "] -> " + value);
+	return value;
+});
+
 smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 
 	smol_frame_t* frame = (smol_frame_t*)SMOL_ALLOC_INSTANCE(smol_frame_t);
@@ -3266,16 +3288,360 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	frame->element = config->web_element != NULL ? config->web_element : "canvas";
 	frame->event_queue = smol_event_queue_create(2048);
 
-	emscripten_set_canvas_element_size(NULL, config->width, config->height);
+	emscripten_set_canvas_element_size(frame->element, config->width, config->height);
 
 	if(config->gl_spec) {
+		smol_frame_gl_spec_t* spec = config->gl_spec;
+		EmscriptenWebGLContextAttributes attribs = { 
+			.alpha = spec->alpha_bits > 0 ? 1 : 0,
+			.depth = spec->depth_bits > 0 ? 1 : 0,
+			.stencil = spec->stencil_bits > 0 ? 1 : 0,
+			.antialias = spec->has_multi_sampling,
+			.premultipliedAlpha = 1,
+			.preserveDrawingBuffer = 1,
+			.powerPreference = 0,
+			.failIfMajorPerformanceCaveat = 0,
+			.majorVersion = spec->major_version,
+			.minorVersion = spec->minor_version,
+			.enableExtensionsByDefault = 1,
+			.explicitSwapControl = 0,
+			.proxyContextToMainThread = 0,
+			.renderViaOffscreenBackBuffer = 1,
+		};
 		
-		//emscripten_webgl_create_context();
+		frame->gl.context = emscripten_webgl_create_context(frame->element, &attribs);
+
+		emscripten_webgl_make_context_current(frame->gl.context);
+
+	}
+	else {
+		//Insert 2D rendering context into the module
+		EM_ASM({
+			const elem = UTF8ToString($0);
+			const canvas = document.getElementById(elem);
+			Module.ctx2D = canvas.getContext("2d");
+			Module.canvas = canvas;
+			Module.ctx2D.imageSmoothingEnabled = false;
+			document.getElementById(elem).focus();
+
+		}, frame->element);
 	}
 
+	//Store the keymappings on javascript side.
+	EM_ASM({
+		Module.keymap = {};
+		if(Module["canvas"] === undefined) {
+			const elem = UTF8ToString($0);
+			Module.canvas = document.getElementById(elem);
+		}
+		Module.canvas.addEventListener('click', function() {
+			Module.canvas.focus();
+		});
+	}, frame->element);
 
+	SMOL_ASSERT(emscripten_set_fullscreenchange_callback(frame->element, frame, 1, &smol_fullscreen_event) == EMSCRIPTEN_RESULT_SUCCESS);
+
+	SMOL_ASSERT(emscripten_set_mousemove_callback(frame->element, frame, 1, &smol_mouse_event) == EMSCRIPTEN_RESULT_SUCCESS);
+	SMOL_ASSERT(emscripten_set_mouseup_callback(frame->element, frame, 1, &smol_mouse_event) == EMSCRIPTEN_RESULT_SUCCESS);
+	SMOL_ASSERT(emscripten_set_mousedown_callback(frame->element, frame, 1, &smol_mouse_event) == EMSCRIPTEN_RESULT_SUCCESS);
+
+	SMOL_ASSERT(emscripten_set_wheel_callback(frame->element, frame, 1, &smol_wheel_event) == EMSCRIPTEN_RESULT_SUCCESS);
+
+	SMOL_ASSERT(emscripten_set_keydown_callback(frame->element, frame, 1, &smol_key_event) == EMSCRIPTEN_RESULT_SUCCESS);
+	SMOL_ASSERT(emscripten_set_keyup_callback(frame->element, frame, 1, &smol_key_event) == EMSCRIPTEN_RESULT_SUCCESS);
+	SMOL_ASSERT(emscripten_set_keypress_callback(frame->element, frame, 1, &smol_key_event) == EMSCRIPTEN_RESULT_SUCCESS);
+
+	SMOL_ASSERT(emscripten_set_focus_callback(frame->element, frame, 1, &smol_focus_event) == EMSCRIPTEN_RESULT_SUCCESS);
+	SMOL_ASSERT(emscripten_set_blur_callback(frame->element, frame, 1, &smol_focus_event) == EMSCRIPTEN_RESULT_SUCCESS);
+
+	smol_add_key("AltLeft", SMOLK_LALT);
+	smol_add_key("AltRight", SMOLK_RALT);
+	smol_add_key("ArrowDown", SMOLK_DOWN);
+	smol_add_key("ArrowLeft", SMOLK_LEFT);
+	smol_add_key("ArrowRight", SMOLK_RIGHT);
+	smol_add_key("ArrowUp", SMOLK_UP);
+	//smol_add_key( "AudioVolumeMute", SMOLK_UNKNOWN);
+	//smol_add_key( "Backquote", SMOLK_UNKNOWN);
+	smol_add_key("Backslash", SMOLK_BACKSLASH);
+	smol_add_key("Backspace", SMOLK_BACKSPACE);
+	//smol_add_key("BracketLeft", SMOLK_UNKNOWN);
+	//smol_add_key("BracketRight", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserBack", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserFavorites", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserForward", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserHome", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserRefresh", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserSearch", SMOLK_UNKNOWN);
+	//smol_add_key("BrowserStop", SMOLK_UNKNOWN);
+	smol_add_key("CapsLock", SMOLK_CAPSLOCK);
+	smol_add_key("Comma", SMOLK_COMMA);
+	smol_add_key("ContextMenu", SMOLK_MENU);
+	smol_add_key("ControlLeft", SMOLK_LCONTROL);
+	smol_add_key("ControlRight", SMOLK_RCONTROL);
+	smol_add_key("Dead", SMOLK_UNKNOWN);
+	smol_add_key("Delete", SMOLK_DELETE);
+	smol_add_key("Digit0", SMOLK_NUM0);
+	smol_add_key("Digit1", SMOLK_NUM1);
+	smol_add_key("Digit2", SMOLK_NUM2);
+	smol_add_key("Digit3", SMOLK_NUM3);
+	smol_add_key("Digit4", SMOLK_NUM4);
+	smol_add_key("Digit5", SMOLK_NUM5);
+	smol_add_key("Digit6", SMOLK_NUM6);
+	smol_add_key("Digit7", SMOLK_NUM7);
+	smol_add_key("Digit8", SMOLK_NUM8);
+	smol_add_key("Digit9", SMOLK_NUM9);
+	smol_add_key("End", SMOLK_END);
+	smol_add_key("Enter", SMOLK_RETURN);
+	smol_add_key("Equal", SMOLK_EQUAL);
+	smol_add_key("Escape", SMOLK_ESC);
+	smol_add_key("F1", SMOLK_F1);
+	smol_add_key("F10", SMOLK_F10);
+	smol_add_key("F11", SMOLK_F11);
+	smol_add_key("F12", SMOLK_F12);
+	smol_add_key("F2", SMOLK_F2);
+	smol_add_key("F3", SMOLK_F3);
+	smol_add_key("F4", SMOLK_F4);
+	smol_add_key("F5", SMOLK_F5);
+	smol_add_key("F6", SMOLK_F6);
+	smol_add_key("F7", SMOLK_F7);
+	smol_add_key("F8", SMOLK_F8);
+	smol_add_key("F9", SMOLK_F9);
+	smol_add_key("Home", SMOLK_HOME);
+	smol_add_key("Insert", SMOLK_INSERT);
+	//smol_add_key("IntlYen", SMOLK_UNKNOWN);
+	smol_add_key("KeyA", SMOLK_A);
+	smol_add_key("KeyB", SMOLK_N);
+	smol_add_key("KeyC", SMOLK_C);
+	smol_add_key("KeyD", SMOLK_D);
+	smol_add_key("KeyE", SMOLK_E);
+	smol_add_key("KeyF", SMOLK_F);
+	smol_add_key("KeyG", SMOLK_G);
+	smol_add_key("KeyH", SMOLK_H);
+	smol_add_key("KeyI", SMOLK_I);
+	smol_add_key("KeyJ", SMOLK_J);
+	smol_add_key("KeyK", SMOLK_K);
+	smol_add_key("KeyL", SMOLK_L);
+	smol_add_key("KeyM", SMOLK_M);
+	smol_add_key("KeyN", SMOLK_N);
+	smol_add_key("KeyO", SMOLK_O);
+	smol_add_key("KeyP", SMOLK_P);
+	smol_add_key("KeyQ", SMOLK_Q);
+	smol_add_key("KeyR", SMOLK_R);
+	smol_add_key("KeyS", SMOLK_S);
+	smol_add_key("KeyT", SMOLK_T);
+	smol_add_key("KeyU", SMOLK_U);
+	smol_add_key("KeyV", SMOLK_V);
+	smol_add_key("KeyW", SMOLK_W);
+	smol_add_key("KeyX", SMOLK_X);
+	smol_add_key("KeyY", SMOLK_Y);
+	smol_add_key("KeyZ", SMOLK_Z);
+	//smol_add_key("MediaPlayPause", SMOLK_UNKNOWN);
+	//smol_add_key("MediaStop", SMOLK_UNKNOWN);
+	//smol_add_key("MediaTrackNext", SMOLK_UNKNOWN);
+	//smol_add_key("MediaTrackPrevious", SMOLK_UNKNOWN);
+	smol_add_key("Minus", SMOLK_MINUS);
+	smol_add_key("NumLock", SMOLK_NUMLOCK);
+	smol_add_key("Numpad0", SMOLK_NUMPAD0);
+	smol_add_key("Numpad1", SMOLK_NUMPAD1);
+	smol_add_key("Numpad2", SMOLK_NUMPAD2);
+	smol_add_key("Numpad3", SMOLK_NUMPAD3);
+	smol_add_key("Numpad4", SMOLK_NUMPAD4);
+	smol_add_key("Numpad5", SMOLK_NUMPAD5);
+	smol_add_key("Numpad6", SMOLK_NUMPAD6);
+	smol_add_key("Numpad7", SMOLK_NUMPAD7);
+	smol_add_key("Numpad8", SMOLK_NUMPAD8);
+	smol_add_key("Numpad9", SMOLK_NUMPAD9);
+	smol_add_key("NumpadAdd", SMOLK_ADD);
+	smol_add_key("NumpadDecimal", SMOLK_PERIOD);
+	smol_add_key("NumpadDivide", SMOLK_DIVIDE);
+	smol_add_key("NumpadEnter", SMOLK_ENTER);
+	smol_add_key("NumpadEqual", SMOLK_EQUAL);
+	smol_add_key("NumpadMultiply", SMOLK_MULTIPLY);
+	smol_add_key("NumpadSubtract", SMOLK_MINUS);
+	smol_add_key("PageDown", SMOLK_PAGEDOWN);
+	smol_add_key("PageUp", SMOLK_PAGEUP);
+	smol_add_key("Pause", SMOLK_PAUSE);
+	smol_add_key("Pause", SMOLK_PAUSE);
+	smol_add_key("Period", SMOLK_PERIOD );
+	smol_add_key("PrintScreen", SMOLK_PRINTSCREEN);
+	smol_add_key("Quote", SMOLK_QUOTE);
+	smol_add_key("ScrollLock", SMOLK_SCROLLLOCK);
+	smol_add_key("Semicolon", SMOLK_SEMICOLON);
+	smol_add_key("ShiftLeft", SMOLK_LSHIFT);
+	smol_add_key("ShiftRight", SMOLK_RSHIFT);
+	smol_add_key("Slash", SMOLK_SLASH);
+	smol_add_key("Space", SMOLK_SPACE);
+	smol_add_key("Tab", SMOLK_TAB);
 	return frame;
 
+}
+
+EMSCRIPTEN_KEEPALIVE
+EM_BOOL smol_fullscreen_event(int event_type, const EmscriptenFullscreenChangeEvent* fullscreen_event, void* user_data) {
+	smol_frame_t* frame = (smol_frame_t*)user_data;
+	smol_event_queue_t* queue = frame->event_queue;
+	smol_frame_event_t ev = { 0 };
+	ev.frame = frame;
+	return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE 
+EM_BOOL smol_mouse_event(int event_type, const EmscriptenMouseEvent* mouse_event, void* user_data) {
+		
+	static const int button_mapping[] = {1, 3, 2};
+
+	smol_frame_t* frame = (smol_frame_t*)user_data;
+	smol_event_queue_t* queue = frame->event_queue;
+	smol_frame_event_t ev = { 0 };
+	ev.frame = frame;
+
+	switch(event_type) {
+		case EMSCRIPTEN_EVENT_MOUSEMOVE: 
+		case EMSCRIPTEN_EVENT_MOUSEDOWN:
+		case EMSCRIPTEN_EVENT_MOUSEUP:
+		{
+
+			ev.type = SMOL_FRAME_EVENT_MOUSE_MOVE;
+
+			ev.mouse.x = mouse_event->targetX;
+			ev.mouse.y = mouse_event->targetY;
+
+			ev.mouse.dx = mouse_event->movementX;
+			ev.mouse.dy = mouse_event->movementY;
+
+			frame->old_mouse_x = ev.mouse.x;
+			frame->old_mouse_y = ev.mouse.y;
+
+			if(event_type == EMSCRIPTEN_EVENT_MOUSEMOVE)
+				smol_event_queue_push_back(queue, &ev);
+
+			if(event_type == EMSCRIPTEN_EVENT_MOUSEDOWN || event_type == EMSCRIPTEN_EVENT_MOUSEUP) {
+				ev.type = (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN) ? SMOL_FRAME_EVENT_MOUSE_BUTTON_DOWN : SMOL_FRAME_EVENT_MOUSE_BUTTON_UP;
+				ev.mouse.button = button_mapping[mouse_event->button];
+				smol_event_queue_push_back(queue, &ev);
+			}
+		}
+		break;
+		default:
+			return 0;
+	}
+	return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+EM_BOOL smol_key_event(int event_type, const EmscriptenKeyboardEvent* key_event, void *user_data) {
+	
+
+	smol_frame_t* frame = (smol_frame_t*)user_data;
+	smol_event_queue_t* queue = frame->event_queue;
+	smol_frame_event_t ev = { 0 };
+	ev.frame = frame;
+
+	switch(event_type) {
+		case EMSCRIPTEN_EVENT_KEYDOWN:
+		case EMSCRIPTEN_EVENT_KEYUP: {
+			ev.type = (event_type == EMSCRIPTEN_EVENT_KEYDOWN) ? SMOL_FRAME_EVENT_KEY_DOWN : SMOL_FRAME_EVENT_KEY_UP;
+			//ev.key.code = smol_frame_map_key(key_event->keyCode, key_event->location);
+			ev.key.code = smol_frame_map_keycode(key_event->code);
+			smol_event_queue_push_back(queue, &ev);
+			
+			if(event_type == EMSCRIPTEN_EVENT_KEYDOWN) {
+
+				const char* buffer = key_event->key;
+				unsigned int unicode = 0;
+				if(
+					(key_event->key[0] >= 'A' && key_event->key[0] <= 'Z') && 
+					(ev.key.code < SMOLK_A || ev.key.code > SMOLK_Z)
+				) break; //Discard keys whom key name doesn't equate the keyCode. For example key 'Backspace' key's key buffer will contain 'B' 
+				//eventhough it should contain NOTHING, it should have UTF-8 value of 8, instead of 'B'. Same goes with the other control keys.
+
+				if((buffer[0] & 0xFE) == 0xFE) unicode = (buffer[0] & 0x01) << 0x1E | (buffer[1] & 0x3F) << 0x18 | (buffer[2] & 0x3F) << 0x12 | (buffer[3] & 0x3F) << 0x0C | (buffer[4] & 0x3F) << 0x06 | (buffer[5] & 0x3F);
+				if((buffer[0] & 0xFC) == 0xFC) unicode = (buffer[0] & 0x03) << 0x18 | (buffer[1] & 0x3F) << 0x12 | (buffer[2] & 0x3F) << 0x0C | (buffer[3] & 0x3F) << 0x06 | (buffer[4] & 0x3F);
+				if((buffer[0] & 0xF0) == 0xF0) unicode = (buffer[0] & 0x07) << 0x12 | (buffer[1] & 0x3F) << 0x0C | (buffer[2] & 0x3F) << 0x06 | (buffer[3] & 0x3F);
+				if((buffer[0] & 0xE0) == 0xE0) unicode = (buffer[0] & 0x0F) << 0x0C | (buffer[1] & 0x3F) << 0x06 | (buffer[2] & 0x3F);
+				if((buffer[0] & 0xC0) == 0xC0) unicode = (buffer[0] & 0x1F) << 0x06 | (buffer[1] & 0x3F);
+				if((buffer[0] & 0x7F) != 0x00) unicode = (buffer[0] & 0x7F);
+			
+				
+				if(unicode) {
+					ev.type = SMOL_FRAME_EVENT_TEXT_INPUT;
+					ev.input.codepoint = unicode;
+					smol_event_queue_push_back(queue, &ev);
+				}
+			}
+
+		} break;
+		/* case EMSCRIPTEN_EVENT_KEYPRESS: {
+
+			if(event_type == EMSCRIPTEN_EVENT_KEYPRESS) {
+				ev.type = SMOL_FRAME_EVENT_TEXT_INPUT;
+
+				unsigned int unicode = 0;
+				const char* buffer = key_event->charValue;
+
+				if((buffer[0] & 0xFE) == 0xFE) unicode = (buffer[0] & 0x01) << 30 | (buffer[1] & 0x3F) << 24 | (buffer[2] & 0x3F) << 18 | (buffer[3] & 0x3F) << 12 | (buffer[4] & 0x3F) << 6 | (buffer[5] & 0x3F); break;
+				if((buffer[0] & 0xFC) == 0xFC) unicode = (buffer[0] & 0x03) << 24 | (buffer[1] & 0x3F) << 18 | (buffer[2] & 0x3F) << 12 | (buffer[3] & 0x3F) << 6 | (buffer[4] & 0x3F); break;
+				if((buffer[0] & 0xF0) == 0xF0) unicode = (buffer[0] & 0x07) << 18 | (buffer[1] & 0x3F) << 12 | (buffer[2] & 0x3F) << 6 | (buffer[3] & 0x3F);
+				if((buffer[0] & 0xE0) == 0xE0) unicode = (buffer[0] & 0x0F) << 12 | (buffer[1] & 0x3F) << 6 | (buffer[2] & 0x3F);
+				if((buffer[0] & 0xC0) == 0xC0) unicode = (buffer[0] & 0x1F) << 6 | (buffer[1] & 0x3F);
+				if((buffer[0] & 0x80) == 0x80) unicode = (buffer[0] & 0x7F);
+				
+				puts(buffer);
+
+				if(unicode) {
+					ev.input.codepoint = unicode;
+					smol_event_queue_push_back(queue, &ev);
+				}
+			}
+
+		} break; */
+	}
+	return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+EM_BOOL smol_wheel_event(int event_type, const EmscriptenWheelEvent* wheel_event, void *user_data) {
+
+	smol_frame_t* frame = (smol_frame_t*)user_data;
+	smol_event_queue_t* queue = frame->event_queue;
+	smol_frame_event_t ev = { 0 };
+	ev.frame = frame;
+
+	int delX = 0;
+	int delY = 0;
+	
+	if(wheel_event->deltaX) delX = (wheel_event->deltaX < 0.) ? -1 : 1;
+	if(wheel_event->deltaY) delY = (wheel_event->deltaX < 0.) ? -1 : 1;
+
+	frame->mouse_z_accum += delX;
+	frame->mouse_w_accum += delY;
+	ev.mouse.z = frame->mouse_z_accum;
+	ev.mouse.w = frame->mouse_w_accum;
+	ev.mouse.dz = delX;
+	ev.mouse.dw = delY;
+
+	return 1;
+
+}
+
+EMSCRIPTEN_KEEPALIVE
+EM_BOOL smol_focus_event(int event_type, const EmscriptenFocusEvent* focus_event, void* user_data) {
+	
+	smol_frame_t* frame = (smol_frame_t*)user_data;
+	smol_event_queue_t* queue = frame->event_queue;
+	smol_frame_event_t ev = { 0 };
+
+	ev.frame = frame;
+
+	switch(event_type) {
+		case EMSCRIPTEN_EVENT_FOCUS: ev.type = SMOL_FRAME_EVENT_FOCUS_GAINED; puts("Focus gained."); break;
+		case EMSCRIPTEN_EVENT_BLUR: ev.type = SMOL_FRAME_EVENT_FOCUS_LOST; puts("Focus lost."); break;
+		default: return 0;
+	}
+
+	smol_event_queue_push_back(queue, &ev);
+
+	return 1;
 }
 
 void smol_frame_set_title(smol_frame_t* frame, const char* title) {
@@ -3284,7 +3650,8 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 }
 
 void smol_frame_update(smol_frame_t* frame) {
-	(void)frame;
+	//Schedules the browser to do something else than just running the main loop.
+	emscripten_sleep(1);
 }
 
 void smol_frame_set_cursor_visibility(smol_frame_t* frame, int visibility) {
@@ -3296,9 +3663,6 @@ void smol_frame_destroy(smol_frame_t* frame) {
 	(void)frame;
 }
 
-//void smol_frame_blit_pixels(smol_frame_t* frame, unsigned int* pixBuf, int pixBufWidth, int pixBufHeight, int dstX, int dstY, int dstW, int dstH, int srcX, int srcY, int srcW, int srcH) {
-//	
-//}
 void smol_frame_blit_pixels(
 	smol_frame_t* frame, 
 	unsigned int* pixBuf, 
@@ -3315,23 +3679,37 @@ void smol_frame_blit_pixels(
 ) {
 	EM_ASM({
 
-		var element = Module.UTF8ToString($0);
-		var buffer = $1;
-		var pixBufW = $2;
-		var pixBufH = $3;
-		var srcX = $4;
-		var srcY = $5;
-		var dstX = $6;
-		var dstY = $7;
-		var dstW = $8;
-		var dstH = $9;
+		/*
+		$0 = element
+		$1 = pixBuf
+		$2 = pixBufW
+		$3 = pixBufH
+		$4 = dstX
+		$5 = dstY
+		$6 = dstW
+		$7 = dstH
+		$8 = srcX
+		$9 = srcY
+		$10 = scrW
+		$11 = srcH
+		*/
 
-		const canvas = document.getElementById(Module.UTF8ToString(element));
-		const ctx = canvas.getContext("2d");
-		const uintBuffer = new Uint32Array(Module.HEAPU32.buffer, buffer + (srcX + srcY * pixBufW), srcW * srcH);
-		ctx.putImageData(new ImageData(uintBuffer, srcW, scrH), dstX, dstY, 0, 0, dstW, dstH);
-	}, frame->element, pixBuf, pixBufWidth, pixBufHeight, srcX, srcY, dstX, dstY, dstW, dstH);
+		const xscale_fact = $6 / $10;
+		const yscale_fact = $6 / $10;
+		const uintBuffer = new Uint8ClampedArray(Module.HEAPU8.buffer, $1 + ($8 + $9 * $2) * 4, $10 * $11 * 4);
+		Module.ctx2D.putImageData(new ImageData(uintBuffer, $10, $11), $4, $5, 0, 0, $6, $7);
+		Module.ctx2D.drawImage(Module.canvas, 0, 0, xscale_fact * Module.canvas.width, yscale_fact * Module.canvas.height);
+	}, frame->element, pixBuf, pixBufWidth, pixBufHeight, dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH);
 }
+
+void smol_gl_set_vsync(int enabled) {
+	(void)enabled;
+}
+
+int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
+	(void)frame;
+}
+
 
 #endif 
 
