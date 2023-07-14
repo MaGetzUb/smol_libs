@@ -1087,7 +1087,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 			smol_wglGetProcAddress = (smol_wglGetProcAddress_proc*)GetProcAddress(gl_module, "wglGetProcAddress");
 
 			//This step is probably not necessary, since we already have a window. 
-			HWND tmp = CreateWindowEx(NULL, smol__wnd_class.lpszClassName, TEXT(""), 0, 0, 0, 400, 300, NULL, NULL, smol__wnd_class.hInstance, NULL);
+			HWND tmp = CreateWindowEx(0, smol__wnd_class.lpszClassName, TEXT(""), 0, 0, 0, 400, 300, NULL, NULL, smol__wnd_class.hInstance, NULL);
 
 			HDC hdc = GetDC(tmp);
 
@@ -1591,7 +1591,7 @@ void smol_frame_blit_pixels(
 
 	char bytes[sizeof(BITMAPINFO) + 24] = { 0 };
 
-	BITMAPINFO* bmi = bytes;
+	BITMAPINFO* bmi = (BITMAPINFO*)bytes;
 	bmi->bmiHeader.biSize = sizeof(bmi->bmiHeader);
 	bmi->bmiHeader.biWidth = width;
 	bmi->bmiHeader.biHeight = -height;
@@ -3271,13 +3271,11 @@ EM_BOOL smol_fullscreen_event(int event_type, const EmscriptenFullscreenChangeEv
 EM_JS(void, smol_add_key, (const char* name, int value), {
 	const name_str = UTF8ToString(name);
 	Module.keymap[name_str] = value;
-	console.log("Added key: [" + name_str + "] = " + value);
 });
 
 EM_JS(smol_key, smol_frame_map_keycode, (const char* code), {
 	const name_str = UTF8ToString(code);
-	const value = Module.keymap[UTF8ToString(code)];
-	console.log("[" + name_str + "] -> " + value);
+	const value = Module.keymap[name_str];
 	return value;
 });
 
@@ -3287,8 +3285,9 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	*frame = (smol_frame_t){ 0 };
 	frame->element = config->web_element != NULL ? config->web_element : "canvas";
 	frame->event_queue = smol_event_queue_create(2048);
-
 	emscripten_set_canvas_element_size(frame->element, config->width, config->height);
+	frame->width = config->width;
+	frame->height = config->height;
 
 	if(config->gl_spec) {
 		smol_frame_gl_spec_t* spec = config->gl_spec;
@@ -3634,8 +3633,8 @@ EM_BOOL smol_focus_event(int event_type, const EmscriptenFocusEvent* focus_event
 	ev.frame = frame;
 
 	switch(event_type) {
-		case EMSCRIPTEN_EVENT_FOCUS: ev.type = SMOL_FRAME_EVENT_FOCUS_GAINED; puts("Focus gained."); break;
-		case EMSCRIPTEN_EVENT_BLUR: ev.type = SMOL_FRAME_EVENT_FOCUS_LOST; puts("Focus lost."); break;
+		case EMSCRIPTEN_EVENT_FOCUS: ev.type = SMOL_FRAME_EVENT_FOCUS_GAINED; break;
+		case EMSCRIPTEN_EVENT_BLUR: ev.type = SMOL_FRAME_EVENT_FOCUS_LOST; break;
 		default: return 0;
 	}
 
