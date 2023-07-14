@@ -63,6 +63,9 @@ typedef unsigned long long smol_size_t;
 typedef unsigned int smol_size_t;
 #endif 
 
+typedef void* smol_file_scan_session_t;
+typedef struct _smol_file_info smol_file_info_t;
+
 #ifdef _MSC_VER
 #define SMOL_THREAD_LOCAL __declspec(thread)
 #	ifdef SMOL_INLINE
@@ -79,6 +82,11 @@ typedef unsigned int smol_size_t;
 //Returns: double - containing seconds.microseconds since the last start 
 //                  of the computer (win32) or since unix epoch (on linux) 
 double smol_timer(); 
+
+
+/* --------------------------------------- */
+/* SOME UNICODE CONVERSION FUNCTIONALITY   */
+/* --------------------------------------- */
 
 //smol_read_entire_file - Opens a file and reads it into a buffer.
 //Arguments:
@@ -133,6 +141,10 @@ int smol_utf16_to_utf8(const unsigned short* utf16, int buf_len, char* utf8);
 //Returns: int                      -- number of utf16 symbols written
 int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16);
 
+/* --------------------------------------- */
+/* A RANDOM NUMBER GENERATOR FUNCTIONALITY */
+/* --------------------------------------- */
+
 //smol_randomize - Randomizes the random generator
 //Arguments:
 // - int seed                       -- The random seed
@@ -155,11 +167,44 @@ int smol_rnd(int minimum, int maximum);
 //Arguments:
 // - float minimum - The lowest number in the range
 // - float maximum - The highest number-epsilon in the range (epsilon = FLT_EPSILON)
+//Returns: float - containing the random number
 float smol_rndf(float minimum, float maximum);
 
 //float SMOL_INLINE smol_map(float value, float low, float high, float new_low, float new_high) {
 //	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
 //}
+
+/* ------------------------------ */
+/* SOME FILE SYSTEM FUNCTIONALITY */
+/* ------------------------------ */
+
+typedef struct _smol_file_info {
+	char is_folder;
+	char file_path[512];
+} smol_file_info_t;
+
+//smol_get_current_directory - Gets the current directory
+//Returns: const char* - A pointer to static variable within the function where current directory path is stored.
+const char* smol_get_current_directory(void);
+
+//smol_change_directory - Changes current directory
+//Arguments:
+//const char* path - Relative / Absolute Path to navigate to
+//Returns: int - If change was successful or not
+int smol_change_directory(const char* path);
+
+//smol_start_file_scan_session - Returns an exclusive random float berween [minimum...maximum)
+//Arguments:
+// - smol_file_info_t*  -- A pointer to smol_file_info_t structure, contains the first file found in the current folder
+//Returns: smol_file_scan_session_t - A handle to the file system scan session
+smol_file_scan_session_t smol_start_file_scan_session(smol_file_info_t* info);
+
+//smol_start_file_scan_session - Returns an exclusive random float berween [minimum...maximum)
+//Arguments:
+// - smol_file_scan_session_t  -- A file scan session handle
+// - smol_file_info_t*         --  A pointer to smol_file_info_t structure, contains the next file found in the current folder
+//Returns: smol_file_scan_session_t - A handle to the file system scan session
+int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info_t* info);
 
 #endif 
 
@@ -195,136 +240,8 @@ float smol_rndf(float minimum, float maximum);
 		SMOL_BREAKPOINT()
 #endif
 
-#if defined(SMOL_PLATFORM_WINDOWS)
 
-//A nasty global :|
-double smol__perf_freq;
-
-double smol_timer(void) {
-
-	if(smol__perf_freq == 0.0) {
-		LARGE_INTEGER freq;
-		if(QueryPerformanceFrequency(&freq) == TRUE) {
-			smol__perf_freq = 1.0 / (double)freq.QuadPart;
-		} else {
-			SMOL_ASSERT(!"Failed to query perfomance frequency!");
-			return 0.;
-		}
-	}
-
-	LARGE_INTEGER ctr = {0};
-	SMOL_ASSERT("Failed to query performance counter!" && QueryPerformanceCounter(&ctr));
-
-	return (double)ctr.QuadPart * smol__perf_freq;
-
-}
-
-
-#elif defined(SMOL_PLATFORM_LINUX)
-
-double smol_timer(void) {
-	struct timeval tval;
-	gettimeofday(&tval, NULL);
-	return (double)tval.tv_sec + (double)tval.tv_usec * 1e-6; 
-}
-
-#elif defined(SMOL_PLATFORM_EMSCRIPTEN)
-
-double smol_timer(void) {
-	struct timespec spec;
-	clock_gettime(CLOCK_MONOTONIC, &spec);
-	return (double)spec.tv_sec + (double)(spec.tv_nsec) * 1e-9;
-}
-
-#endif 
-
-void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
-
-	void* buffer = NULL;
-
-#	ifdef _WIN32
-
-#	ifdef UNICODE
-	wchar_t path[512] = { 0 };
-	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, file_path, strlen(file_path), path, 512);
-	HANDLE file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-#	else 
-	HANDLE file = CreateFile(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-#endif 
-	
-	if(file == NULL) return NULL;
-		
-	DWORD high = 0;
-	DWORD low = GetFileSize(file, &high);
-	*size = ((smol_size_t)low | ((smol_size_t)high << 32ULL));
-		
-	buffer = malloc(size[0]+1);
-		
-	BYTE* byte_ptr = (BYTE*)buffer;
-	DWORD bytes_to_read = *size;
-	DWORD bytes_read = 0;
-	while(ReadFile(file, byte_ptr, (bytes_to_read - bytes_read), &bytes_read, NULL) && bytes_to_read) {
-		byte_ptr += bytes_read;
-		bytes_to_read -= bytes_read;
-	}
-	*byte_ptr = 0;
-	CloseHandle(file);
-
-#endif 
-
-#ifdef __linux__
-
-	struct stat file_stat; 
-
-	int fd = open(file_path, O_RDONLY);
-	
-	if(!fd) return NULL;
-
-	if(fstat(fd, &file_stat) == -1) {
-		close(fd);
-		return NULL;
-	}
-
-	buffer = malloc(file_stat.st_size+1);
-	unsigned char* byte_ptr = (unsigned char*)buffer;
-
-	ssize_t bytes_to_read = file_stat.st_size;
-	ssize_t bytes_read;
-	while((bytes_read = read(fd, byte_ptr, bytes_to_read)) > 0 && bytes_to_read) {
-		byte_ptr += bytes_read;
-		bytes_to_read -= bytes_read;
-	}
-
-	close(fd);
-
-	*byte_ptr = 0;
-#endif 
-
-#ifdef __EMSCRIPTEN__
-	FILE* file = NULL;
-	if((file = fopen(file_path, "r")) != NULL) {
-		
-		fseek(file, 0, SEEK_END);
-		
-		smol_size_t size = ftell(file);
-		
-		fseek(file, 0, SEEK_SET);
-		
-		buffer = malloc(size);
-		
-		fread((char*)buffer, 1, size, file);
-
-		fclose(file);
-	
-	}
-
-
-#endif 
-
-	return buffer;
-
-}
-
+#pragma region Unicode stuff 
 
 //https://en.wikipedia.org/wiki/UTF-8#Encoding
 int smol_utf8_to_utf32(const char* utf8, unsigned int* utf32) {
@@ -404,7 +321,6 @@ int smol_utf32_to_utf8(unsigned int utf32, int buf_len, char* utf8) {
 	return clen;
 
 }
-
 //https://en.wikipedia.org/wiki/UTF-16#Examples
 int smol_utf16_to_utf32(const unsigned short* utf16, unsigned int* utf32) {
 
@@ -466,6 +382,10 @@ int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16) {
 
 }
 
+#pragma endregion
+
+
+#pragma region Linear Congruential PRNG
 unsigned int smol__rand_state;
 
 void smol_randomize(unsigned int seed) {
@@ -489,5 +409,390 @@ int smol_rnd(int minimum, int maximum) {
 float smol_rndf(float minimum, float maximum) {
 	return minimum + smol_randf() * (maximum - minimum);
 }
+
+#pragma endregion
+
+#if defined(SMOL_PLATFORM_WINDOWS)
+
+//A nasty global :|
+double smol__perf_freq;
+
+double smol_timer(void) {
+
+	if(smol__perf_freq == 0.0) {
+		LARGE_INTEGER freq;
+		if(QueryPerformanceFrequency(&freq) == TRUE) {
+			smol__perf_freq = 1.0 / (double)freq.QuadPart;
+		} else {
+			SMOL_ASSERT(!"Failed to query perfomance frequency!");
+			return 0.;
+		}
+	}
+
+	LARGE_INTEGER ctr = {0};
+	SMOL_ASSERT("Failed to query performance counter!" && QueryPerformanceCounter(&ctr));
+
+	return (double)ctr.QuadPart * smol__perf_freq;
+
+}
+
+const char* smol_get_current_directory(void) {
+	
+	static char buffer[512] = { 0 };
+	
+	{
+#ifdef UNICODE 
+		wchar_t buf[512];
+		GetCurrentDirectory(512, buf);
+		BOOL subst = FALSE;
+		WideCharToMultiByte(CP_UTF8, MB_COMPOSITE, buf, lstrlenW(buf), buffer, 1024, "?", &subst);
+#endif 
+	}
+	
+	return buffer;
+
+}
+
+int smol_change_directory(const char* dir) {
+
+#ifdef UNICODE
+	wchar_t path[512] = { 0 };
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, dir, strlen(dir), path, 512);
+#else 
+	const char* path = dir;
+#endif 
+
+	return SetCurrentDirectory(path);
+}
+
+smol_file_scan_session_t smol_start_file_scan_session(smol_file_info_t* info) {
+
+	smol_file_scan_session_t session;
+	WIN32_FIND_DATA file_data;
+	session = (smol_file_scan_session_t)FindFirstFile(TEXT(".\\*"), &file_data);
+
+#ifdef UNICODE 
+	BOOL subst = FALSE;
+	WideCharToMultiByte(CP_UTF8, 0, file_data.cFileName, lstrlenW(file_data.cFileName), info->file_path, 512, "?", &subst);
+#else 
+	memcpy(info->file_path, file_data.cFileName, strlen(file_data.cFileName));
+#endif 
+	info->is_folder = (file_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? SMOL_TRUE : SMOL_FALSE;
+
+	return session;
+}
+
+int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info_t* info) {
+
+	WIN32_FIND_DATA file_data;
+	if(FindNextFile(session, &file_data) == FALSE)
+		return SMOL_FALSE;
+
+#ifdef UNICODE 
+	BOOL subst = FALSE;
+	WideCharToMultiByte(CP_UTF8, 0, file_data.cFileName, lstrlenW(file_data.cFileName), info->file_path, 512, "?", &subst);
+#else 
+	memcpy(info->file_path, file_data.cFileName, strlen(file_data.cFileName));
+#endif 
+	info->is_folder = (file_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? SMOL_TRUE : SMOL_FALSE;
+
+	return SMOL_TRUE;
+}
+
+void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
+
+	void* buffer = NULL;
+
+#	ifdef UNICODE
+	wchar_t path[512] = { 0 };
+	MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, file_path, strlen(file_path), path, 512);
+	HANDLE file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#	else 
+	HANDLE file = CreateFile(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#endif 
+	
+	if(file == NULL) return NULL;
+		
+	DWORD high = 0;
+	DWORD low = GetFileSize(file, &high);
+	*size = ((smol_size_t)low | ((smol_size_t)high << 32ULL));
+		
+	buffer = malloc(size[0]+1);
+		
+	BYTE* byte_ptr = (BYTE*)buffer;
+	DWORD bytes_to_read = *size;
+	DWORD bytes_read = 0;
+	while(ReadFile(file, byte_ptr, (bytes_to_read - bytes_read), &bytes_read, NULL) && bytes_to_read) {
+		byte_ptr += bytes_read;
+		bytes_to_read -= bytes_read;
+	}
+	*byte_ptr = 0;
+	CloseHandle(file);
+
+	return buffer;
+
+}
+
+#endif 
+
+#if defined(SMOL_PLATFORM_LINUX)
+
+double smol_timer(void) {
+	struct timeval tval;
+	gettimeofday(&tval, NULL);
+	return (double)tval.tv_sec + (double)tval.tv_usec * 1e-6; 
+}
+
+const char* smol_get_current_directory(void) {
+	
+	static char buffer[512] = { 0 };
+	return getcwd(buffer, 512);
+
+}
+
+int smol_change_directory(const char* directory) {
+	return chdir(directory) == 0;
+}
+
+smol_file_scan_session_t smol_start_file_scan_session(smol_file_info_t* info) {
+
+	DIR* dir;
+	if((dir = opendir(".")) == NULL)
+		return nullptr;
+	struct dirent* ent = readdir(dir);
+	if(ent == nullptr) return NULL;
+
+	memcpy(info->path, ent->d_name, strlen(ent->d_name));
+	struct stat status;
+	stat(ent->d_name, &status);
+	info->is_folder = (status.st_mode & S_IFDIR);
+
+	return (smol_file_scan_session_t)dir;
+
+}
+
+int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info_t* info) {
+
+	DIR* dir = (DIR*)session;
+	struct dirent* ent;
+
+	if((ent = readdir(dir)) == NULL) {
+		closedir(dir);
+		return SMOL_FALSE;
+	} 
+
+	memcpy(info->path, ent->d_name, strlen(ent->d_name));
+	struct stat status;
+	stat(ent->d_name, &status);
+	info->is_folder = (status.st_mode & S_IFDIR);
+
+	return SMOL_TRUE; 
+}
+
+void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
+
+	struct stat file_stat; 
+
+	int fd = open(file_path, O_RDONLY);
+	
+	if(!fd) return NULL;
+
+	if(fstat(fd, &file_stat) == -1) {
+		close(fd);
+		return NULL;
+	}
+
+	buffer = malloc(file_stat.st_size+1);
+	unsigned char* byte_ptr = (unsigned char*)buffer;
+
+	ssize_t bytes_to_read = file_stat.st_size;
+	ssize_t bytes_read;
+	while((bytes_read = read(fd, byte_ptr, bytes_to_read)) > 0 && bytes_to_read) {
+		byte_ptr += bytes_read;
+		bytes_to_read -= bytes_read;
+	}
+
+	close(fd);
+
+	*byte_ptr = 0;
+
+	return buffer;
+
+
+}
+
+#endif 
+
+
+#if defined(SMOL_PLATFORM_WEB)
+
+void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
+
+	void* buffer = NULL;
+
+	FILE* file = NULL;
+	if((file = fopen(file_path, "r")) != NULL) {
+		
+		fseek(file, 0, SEEK_END);
+		
+		smol_size_t size = ftell(file);
+		
+		fseek(file, 0, SEEK_SET);
+		
+		buffer = malloc(size+1);
+		fread((char*)buffer, 1, size, file);
+
+		fclose(file);
+		((char*)buffer)[size] = 0;
+	}
+
+
+	return buffer;
+
+}
+
+double smol_timer(void) {
+	struct timespec spec;
+	clock_gettime(CLOCK_MONOTONIC, &spec);
+	return (double)spec.tv_sec + (double)(spec.tv_nsec) * 1e-9;
+}
+
+
+
+const char* smol_get_current_directory(void) {
+
+	static char buffer[512] = { 0 };
+
+	EM_ASM({
+		var bufferPtr = $0;
+		var buffer = Module.HEAPU8.subarray(bufferPtr, bufferPtr + 512);
+		var path = FS.cwd();
+
+		var encoder = new TextEncoder();
+		var encodedString = encoder.encode(path);
+
+		var buffer = Module.HEAPU8.subarray(bufferPtr, bufferPtr + 512);
+		var byteLength = Math.min(encodedString.length, 512);
+
+		for(var i = 0; i < byteLength; i++) {
+			buffer[i] = encodedString[i];
+		}
+	}, buffer);
+
+	return buffer;
+}
+
+
+EM_JS(int, smol_change_directory, (const char* path), {
+	return FS.chdir(stringToUTF8(path));
+})
+
+smol_file_scan_session_t smol_start_file_scan_session(smol_file_info_t* info) {
+	
+	int file_scan_handle = -1;
+
+	EM_ASM({
+
+		if(Module["fileScanSessions"] === undefined) {
+			Module.fileScanSessions = new Array();
+			Module.freeScanSessions = new Array();
+		}
+		
+
+		var fileScanSession = {};
+		fileScanSession.file_index = 0;
+		fileScanSession.cur_dir = FS.cwd();
+		fileScanSession.files = FS.readdir(fileScanSession.cur_dir);
+			
+		var bufferPtr = $1;
+		var buffer = Module.HEAPU8.subarray(bufferPtr, bufferPtr + 512);
+
+		var encoder = new TextEncoder();
+		var encodedString = encoder.encode(fileScanSession.files[fileScanSession.file_index]);
+
+		var buffer = Module.HEAPU8.subarray(bufferPtr, bufferPtr + 512);
+		var byteLength = Math.min(encodedString.length, 512);
+
+		for(var i = 0; i < byteLength && i < 512; i++) {
+			buffer[i] = encodedString[i];
+		}
+		buffer[byteLength] = 0;
+
+		Module.setValue($2, FS.isDir(fileScanSession.files[fileScanSession.file_index]), 'i32');
+		fileScanSession.file_index++;
+
+		console.log("File scan session #" + Module.fileScanSessions.length + " intialized.");
+		
+		if(!Module.freeScanSessions.size) {
+			Module.fileScanSessions.push(fileScanSession);
+			Module.setValue($0, Module.fileScanSessions.length, 'i32');
+		} else {
+			var index = Module.freeScanSessions.pop();
+			Module.fileScanSessions[index] = fileScanSession;
+			Module.setValue($0, Module.freeScanSessions[index] + 1, 'i32');
+		}
+		console.log(fileScanSession.files.length);
+		console.log(Module.fileScanSessions);
+	}, &file_scan_handle, info->file_path, &info->is_folder);
+	
+	return (smol_file_scan_session_t*)file_scan_handle;
+}
+
+int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info_t* info) {
+
+	int finished = 0;
+
+	EM_ASM({
+
+		if(
+			Module["fileScanSessions"] === undefined ||
+			Module["fileScanSessions"] == null ||
+			Module["fileScanSessions"].length == 0
+		) {
+			Module.setValue($3, 0, 'i32');
+			return;
+		}
+
+		
+		var session = Module.fileScanSessions[$0 - 1];
+		
+		console.log(session.file_index);
+		if(session.file_index >= session.files.length) {
+			Module.fileScanSessions[$0 - 1] = undefined;
+			Module.freeScanSessions.push($0 - 1);
+			Module.setValue($3, 0, 'i32');
+			console.log("File scan session #" + $1 + " finished.");
+			return;
+		}
+
+
+		var bufferPtr = $1;
+		var buffer = Module.HEAPU8.subarray(bufferPtr, bufferPtr + 512);
+		console.log($1);
+
+		var encoder = new TextEncoder();
+		var encodedString = encoder.encode(session.files[session.file_index]);
+
+		var buffer = Module.HEAPU8.subarray(bufferPtr, bufferPtr + 512);
+		var byteLength = Math.min(encodedString.length, 512);
+		console.log(byteLength);
+
+		for(var i = 0; i < byteLength && i < 512; i++) {
+			buffer[i] = encodedString[i];
+		}
+		buffer[byteLength] = 0;
+
+		Module.setValue($2, FS.isDir(session.files[session.file_index]), 'i32');
+		session.file_index++;
+		Module.setValue($3, 1, 'i32');
+
+		
+
+	}, (int)session, info->file_path, &info->is_folder, &finished);
+
+	return finished;
+}
+
+#endif 
 
 #endif 
