@@ -27,8 +27,8 @@ int main() {
 	smol_image_t img = { 0 };
 	img = smol_load_image_qoi("gfx/test.qoi");
 
-	smol_frame_t* frame = smol_frame_create(640, 480, "Canvas test");
-	smol_canvas_t canvas = smol_canvas_create(640, 480);
+	smol_frame_t* frame = smol_frame_create(512, 512, "Canvas test");
+	smol_canvas_t canvas = smol_canvas_create(512, 512);
 
 
 	double loop_start = smol_timer();
