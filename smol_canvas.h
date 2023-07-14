@@ -399,15 +399,16 @@ void smol_canvas_draw_image(smol_canvas_t* canvas, smol_image_t* image, int x, i
 
 	smol_u32 cw = canvas->draw_surface.width;
 	smol_u32 ch = canvas->draw_surface.height;
+
 	int src_x = 0;
 	int src_y = 0;
 	int dst_w = image->width;
 	int dst_h = image->height;
 
 	int left = x;
-	int right = x + dst_w;
+	int right = left + dst_w;
 	int top = y;
-	int bottom = y + dst_h;
+	int bottom = top + dst_h;
 
 	if(left < 0) {
 		src_x += (-left);
@@ -420,18 +421,18 @@ void smol_canvas_draw_image(smol_canvas_t* canvas, smol_image_t* image, int x, i
 	}
 
 	if(right > (int)cw) {
-		right -= cw;
+		right -= (right - cw);
 	}
 	
 	if(bottom > (int)ch) {
-		bottom -= ch;
+		bottom -= (bottom - ch);
 	}
 
 	
 	smol_pixel_blend_func_proc blend = smol_stack_back(canvas->blend_funcs, smol_pixel_blend_func_proc);
 
-	for(int py = top, iy = 0; py < bottom; py++, iy++)
-	for(int px = left, ix = 0; px < right; px++, ix++) 
+	for(int py = top, iy = 0; py < bottom && iy < dst_h; py++, iy++)
+	for(int px = left, ix = 0; px < right && ix < dst_w; px++, ix++) 
 	{
 		smol_image_blendpixel(&canvas->draw_surface, px, py, smol_image_getpixel(image, src_x+ix, src_y+iy), blend);
 	}
