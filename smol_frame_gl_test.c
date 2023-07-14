@@ -7,6 +7,10 @@
 #ifndef __EMSCRIPTEN__
 #define GLBIND_IMPLEMENTATION
 #include "thirdparty/glbind.h"
+#else 
+#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
+#include <EGL/egl.h>
 #endif 
 
 #define SMOL_FRAME_BACKEND_XCB
@@ -19,8 +23,13 @@
 #include "smol_font_16x16.h"
 
 const char vsh[] =
+#ifndef SMOL_PLATFORM_WEB
 	"#version 330\n"
 	"#line " SMOL_STRINGIFY(__LINE__) "\n"
+#else 
+	"#version 300 es\n"
+	"precision highp float;\n"
+#endif 
 	"\n"
 	"layout(location = 0) in vec2 aPos;\n"
 	"layout(location = 1) in vec3 aCol;\n"
@@ -38,8 +47,13 @@ const char vsh[] =
 ;
 
 const char fsh[] =
+#ifndef SMOL_PLATFORM_WEB
 	"#version 330\n"
 	"#line " SMOL_STRINGIFY(__LINE__) "\n"
+#else 
+	"#version 300 es\n"
+	"precision highp float;\n"
+#endif
 	"\n"
 	"layout(location = 0) out vec4 ResultColor;\n"
 	"\n"
@@ -53,8 +67,10 @@ int main() {
 
 #ifndef SMOL_PLATFORM_WEB
 	GLenum result = glbInit(NULL, NULL);
-#endif 
 	smol_frame_gl_spec_t gl_spec = smol_init_gl_spec(3, 3, SMOL_TRUE, SMOL_FALSE, 8, SMOL_TRUE);
+#else 
+	smol_frame_gl_spec_t gl_spec = smol_init_gl_spec(2, 0, SMOL_TRUE, SMOL_FALSE, 8, SMOL_TRUE);
+#endif 
 
 	smol_frame_config_t frame_config = {
 		.width = 800,
@@ -67,15 +83,16 @@ int main() {
 
 	smol_frame_t* frame = smol_frame_create_advanced(&frame_config);
 
-
+#ifndef SMOL_PLATFORM_WEB
 	glEnable(GL_MULTISAMPLE);
+#endif 
+
 	puts(glGetString(GL_VERSION));
 
 	int majo, mino;
 	glGetIntegerv(GL_MAJOR_VERSION, &majo);
 	glGetIntegerv(GL_MINOR_VERSION, &mino);
 	printf("OpenGL Version: %d.%d\n", majo, mino);
-
 	
 	float vbData[][5] = {
 		{ -.25f, -.25f, 1.f, 0.f, 0.f },
@@ -139,18 +156,21 @@ int main() {
 
 	puts("Generating vao...");
 	GLuint vao;
+
+
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
 
 
 	glBindBuffer(GL_ARRAY_BUFFER, vertexData);
-	glEnableVertexArrayAttrib(vao, 0);
+	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 5, (void*)(sizeof(float)*0));
-	glEnableVertexArrayAttrib(vao, 1);
+	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 5, (void*)(sizeof(float)*2));
+
 	glBindVertexArray(0);
-	
-	
+
+#if 0
 	GLuint font;
 	{
 		puts("Generating pixel buffer for texture...");
@@ -178,6 +198,7 @@ int main() {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
+#endif 
 
 	glViewport(0, 0, 800, 600);
 	glClearColor(0.f, 0.f, 0.5f, 1.f);
@@ -210,15 +231,20 @@ int main() {
 		glUseProgram(program);
 		glUniform1fv(uniform_angle_location, 1, &rot);
 		glUniform2fv(uniform_aspect_location, 1, &aspect);
+
 		glBindVertexArray(vao);
+
 		glDrawArrays(GL_TRIANGLES, 0, 3);
+
 		glBindVertexArray(0);
+
 		glUseProgram(0);
 
 		smol_frame_gl_swap_buffers(frame);
 	}
 
 	glDeleteVertexArrays(1, &vao);
+
 	glDeleteBuffers(1, &vertexData);
 	glDeleteProgram(program);
 
