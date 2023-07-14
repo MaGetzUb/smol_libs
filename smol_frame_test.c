@@ -69,13 +69,13 @@ int main(int numArgs, const char* argv[]) {
 	double blink_timer = 0.4;
 	bool is_blinking = true;
 
-	printf("%lf\n", smol_timer());
+
 	char input_buffer[256] = {0};
 	int input_cursor = 0;
 
+	tp1 = smol_timer();
 	while(running) {
 
-		tp1 = smol_timer();
 
 		smol_frame_update(frame);
 		smol_inputs_flush();
@@ -200,8 +200,9 @@ int main(int numArgs, const char* argv[]) {
 
 		smol_frame_blit_pixels(frame, surface, 800, 600, 0, 0, 800, 600, 0, 0, 800, 600);
 
-
-		dt = smol_timer() - tp1;
+		double tp2 = smol_timer();
+		dt = tp2 - tp1;
+		tp1 = tp2;
 		timeAccum += dt;
 
 		if(timeAccum > 1.) {
