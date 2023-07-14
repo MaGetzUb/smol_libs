@@ -516,16 +516,19 @@ typedef enum {
 
 #ifdef SMOL_FRAME_IMPLEMENTATION
 
-#ifdef _MSC_VER
+#if defined(SMOL_PLATFORM_WINDOWS)
 #	ifndef SMOL_BREAKPOINT
-#		define SMOL_BREAKPOINT __debugbreak //MSVC uses this
-#	endif
+#		ifdef _MSC_VER
+#			define SMOL_BREAKPOINT() __debugbreak() //MSVC uses this
+#		else
+#			define SMOL_BREAKPOINT() DebugBreak()
+#		endif 
+#	endif 
 #elif defined(SMOL_PLATFORM_WEB)
 #	define SMOL_BREAKPOINT() EM_ASM({ debugger; })
-#else
-#	define SMOL_BREAKPOINT_HACK() while(0)
+#elif defined(SMOL_PLATFORM_LINUX)
 #	ifndef SMOL_BREAKPOINT
-#		define SMOL_BREAKPOINT raise(SIGTRAP); SMOL_BREAKPOINT_HACK
+#		define SMOL_BREAKPOINT() raise(SIGTRAP)
 #	endif
 #endif 
 
