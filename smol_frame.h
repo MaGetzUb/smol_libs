@@ -3653,7 +3653,7 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 
 void smol_frame_update(smol_frame_t* frame) {
 	//Schedules the browser to do something else than just running the main loop.
-	emscripten_sleep(1);
+	emscripten_sleep(0);
 }
 
 void smol_frame_set_cursor_visibility(smol_frame_t* frame, int visibility) {
