@@ -24,15 +24,17 @@ distribution.
 #ifndef SMOL_CANVAS_H
 #define SMOL_CANVAS_H
 
-#ifndef SMOL_FRAME_H
-#include "smol_frame.h"
-#endif 
-#ifndef SMOL_MATH_H
-#include "smol_math.h"
-#endif 
-
 #include <string.h>
 
+#ifndef SMOL_INLINE
+#ifdef _MSC_VER
+#define SMOL_INLINE __forceinline
+#else 
+#define SMOL_INLINE inline __attribute__((inline_always))
+#endif 
+#endif 
+
+//Some predefined color values
 #define SMOL_RGBA(R, G, B, A) (smol_pixel_t){ R, G, B, A }
 
 #define SMOL_RGB(R, G, B)		SMOL_RGBA(R,   G,   B, 255)
@@ -72,6 +74,7 @@ distribution.
 #define SMOLC_DARK_VIOLET		SMOL_RGB(63,   0, 127)
 #define SMOLC_DARK_SKYBLUE		SMOL_RGB( 0,  63, 127)
 
+//Some types that are useful
 #if _WIN64
 typedef unsigned long long smol_size_t;
 #else 
@@ -81,26 +84,29 @@ typedef unsigned int smol_u32;
 typedef unsigned short smol_u16;
 typedef unsigned char smol_u8;
 
+//Forward declare the canvas
 typedef struct _smol_canvas_t smol_canvas_t;
+
+#ifndef SMOL_MATH_H
+typedef union _smol_m3_t smol_m3_t;
+#endif 
+
+//The pixel structure used for color.
+//The byte order on Little Endian architectures is [msb] ABGR [lsb]
 typedef union _smol_pixel_t {
 	struct { smol_u8  r, g, b, a; };
 	smol_u32 pixel;
 } smol_pixel_t;
 
-typedef struct _smol_stack_t {
-	void* data;
-	smol_u32 element_size;
-	smol_u32 element_count;
-	smol_u32 total_allocation;
-} smol_stack_t;
-
+//A structure of image
 typedef struct _smol_image_t {
 	smol_pixel_t* pixel_data;
-	void(*free_func)(void*);
+	void(*free_func)(void*); //This is optional, image destroy will call this, if images it's set
 	smol_u32 width;
 	smol_u32 height;
 } smol_image_t;
 
+//Contains data for horizontal spacing of a glyph
 typedef struct _smol_font_hor_geometry_t {
 	char offset_x;
 	char width;
@@ -114,7 +120,230 @@ typedef struct _smol_font_t {
 	smol_font_hor_geometry_t* geometry;
 } smol_font_t;
 
+//The pixel blending callback type
 typedef smol_pixel_t(*smol_pixel_blend_func_proc)(smol_pixel_t, smol_pixel_t, smol_u32, smol_u32);
+
+//smol_image_create_advanced - Creates an image, allocates buffer if no buffer is provided. Clears also the newly allocated buffer with color.
+// - smol_u32 width       -- Width of the new pixel buffer, or or existing one
+// - smol_u32 height      -- Height of the new pixel buffer, or existing one
+// - smol_pixel_t* buffer -- Pointer to the buffer, if null, function allocates new buffer. Remember to set a free_func from the resulting field.
+// - smol_pixel_t color   -- A fill color to fill the newly allocated buffer with, if buffer argument was NULL.
+//Returns: smol_image_t containing the resulting image structure.
+smol_image_t smol_image_create_advanced(smol_u32 width, smol_u32 height, smol_pixel_t* buffer, smol_pixel_t color);
+
+//smol_image_destroy - Destroys an image, frees the piel buffer, if the free_func was set within the smol_image_t structure. 
+// - smol_image_t* image -- A pointer to the image.
+void smol_image_destroy(smol_image_t* image);
+
+//smol_image_putpixel - Puts a pixel into the image
+// - smol_image_t* img  -- A pointer to the image
+// - smol_u32 x         -- An X-coordinate within the image
+// - smol_u32 y         -- An Y-coordinate within the image
+// - smol_pixel_t color -- The color of the pixel
+void smol_image_putpixel(smol_image_t* img, smol_u32 x, smol_u32 y, smol_pixel_t color);
+
+//smol_image_blendpixel - Blends a pixel into the image
+// - smol_image_t* img                -- A pointer to the image
+// - smol_u32 x                       -- An X-coordinate within the image
+// - smol_u32 y                       -- An Y-coordinate within the image
+// - smol_pixel_t pixel               -- Color of the pixel to be blended in
+// - smol_pixel_blend_func_proc blend -- A pointer to the blend function
+void smol_image_blendpixel(smol_image_t* img, smol_u32 x, smol_u32 y, smol_pixel_t pixel, smol_pixel_blend_func_proc blend);
+
+//smol_image_getpixel - Samples a pixel from the image.
+// - smol_image_t* img -- Pointer to the image
+// - smol_u32 x        -- Coordinate X within the image
+// - smol_u32 y        -- Coordinate Y within the image
+//Returns: smol_pixel_t containing the color within the image
+smol_pixel_t smol_image_getpixel(smol_image_t* img, smol_u32 x, smol_u32 y);
+
+//smol_canvas_create - Creates a new canvas 
+// - smol_u32 width  -- Width of the canvas
+// - smol_u32 height -- Height of the canvas
+//Returns: smol_canvas_t a structure of the newly created canvas
+smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height);
+
+//smol_canvas_set_color - Sets current draw color the color of the canvas
+// - smol_canvas_t* canvas -- Pointer to the canvas
+// - smol_pixel_t color    -- A pixel color (RGBA) 
+void smol_canvas_set_color(smol_canvas_t* canvas, smol_pixel_t color);
+
+//smol_canvas_clear - Clears the canvas with wanted color
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - smol_pixel_t color    -- A pixel color (RGBA) 
+void smol_canvas_clear(smol_canvas_t* canvas, smol_pixel_t color);
+
+//smol_canvas_push_color - Pushes the current draw color into the color stack
+// - smol_canvas_t* canvas -- A pointer to the canvas
+void smol_canvas_push_color(smol_canvas_t* canvas);
+
+//smol_canvas_pop_color - Pops the draw color from the top of the color stack
+// - smol_canvas_t* canvas -- A pointer to the canvas
+void smol_canvas_pop_color(smol_canvas_t* canvas);
+
+//smol_canvas_push_blend - Pushes the current blending operator on top of the blend stack
+// - smol_canvas_t* canvas -- A pointer to the canvas
+void smol_canvas_push_blend(smol_canvas_t* canvas);
+
+//smol_canvas_pop_blend - Pops the blending operator from the top of the blend stack
+// - smol_canvas_t* canvas -- A pointer to the canvas
+void smol_canvas_pop_blend(smol_canvas_t* canvas);
+
+
+//smol_canvas_draw_pixel - Draws a pixel into the canvas with current color
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int x                 -- Location X
+// - int y                 -- Location Y
+void smol_canvas_draw_pixel(smol_canvas_t* canvas, int x, int y);
+
+//smol_canvas_draw_line - Draws a line into the canvas
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int x0                -- Line starting point on X-Axis
+// - int y0                -- Line starting point on Y-Axis
+// - int x1                -- Line ending point on X-Axis
+// - int y1                -- Line ending point on Y-Axis
+void smol_canvas_draw_line(smol_canvas_t* canvas, int x0, int y0, int x1, int y1);
+
+//smol_canvas_draw_image - Draws image into the canvas 
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - smol_image_t* image   -- A pointer to the image
+// - int x                 -- Image position on X-axis (top left aligned)
+// - int y                 -- Image position on Y-axis (top left aligned)
+void smol_canvas_draw_image(smol_canvas_t* canvas, smol_image_t* image, int x, int y);
+
+//smol_canvas_draw_image_subrect_streched - Draws stretched subrect of an image into the canvas
+// - smol_canvas_t* canvas --  A pointer to the canvas
+// - smol_image_t* image   --  A pointer to the image
+// - int x                 -- Image position on X-axis (top left aligned)
+// - int y                 -- Image position on Y-axis (top left aligned)
+// - int dst_w             -- The width of the resulting rect angle where a portion of the image is drawn into
+// - int dst_h             -- The height of the resulting rect angle where a portion of the image is drawn into
+// - int src_x             -- The source location on X-axis within the image
+// - int src_y             -- The source location on Y-axis within the image
+// - int src_w             -- The horizontal number of pixels within the image
+// - int src_h             -- The vertical number of pixels within the image
+void smol_canvas_draw_image_subrect_streched(smol_canvas_t* canvas, smol_image_t* image, int x, int y, int dst_w, int dst_h, int src_x, int src_y, int src_w, int src_h);
+
+//smol_canvas_draw_circle - Draw a circle into the canvas
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int xc                -- Circle's center on X-axis
+// - int yc                -- Circle's center on Y-axis
+// - int rad               -- Circle's radius
+void smol_canvas_draw_circle(smol_canvas_t* canvas, int xc, int yc, int rad);
+
+//smol_canvas_fill_circle - Fills a circle into the canvas
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int xc                -- Circle's center on X-axis
+// - int yc                -- Circle's center on Y-axis
+// - int rad               -- Circle's radius
+void smol_canvas_fill_circle(smol_canvas_t* canvas, int xc, int yc, int rad);
+
+//smol_canvas_draw_rect - Draws a rectangle into the cavas
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int x                 -- Rectangle's top left X location
+// - int y                 -- Rectangle's top left Y location
+// - int w                 -- Width of the rectangle
+// - int h                 -- Height of the rectangle
+void smol_canvas_draw_rect(smol_canvas_t* canvas, int x, int y, int w, int h);
+
+//smol_canvas_fill_rect - Fills a rectangle into the canvas
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int x                 -- Rectangle's top left X location
+// - int y                 -- Rectangle's top left Y location
+// - int w                 -- Width of the rectangle
+// - int h                 -- Height of the rectangle
+void smol_canvas_fill_rect(smol_canvas_t* canvas, int x, int y, int w, int h);
+
+//smol_canvas_fill_triangle - Fills a triangle into the canvas (FIXME: not working, fix ples)
+// - smol_canvas_t* canvas -- A pointer to the canvas  
+// - int x0                -- Vertex 1's location on X-axis
+// - int y0                -- Vertex 1's location on Y-axis
+// - int x1                -- Vertex 2's location on X-axis
+// - int y1                -- Vertex 3's location on Y-axis
+// - int x2                -- Vertex 3's location on X-axis
+// - int y2                -- Vertex 3's location on Y-axis
+void smol_canvas_fill_triangle(smol_canvas_t* canvas, int x0, int y0, int x1, int y1, int x2, int y2);
+
+//smol_canvas_draw_text - Draws a text into the canvas using smol_font_t
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int tx                -- Top left coordinate on X axis of the text 
+// - int ty                -- Top left coordinate on Y axis of the text
+// - smol_font_t font      -- Font to draw the text with
+// - int scale             -- Scale of the resulting text
+// - const char* text      -- The text to be drawn
+void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char* text);
+
+
+#ifdef SMOL_FRAME_H
+//smol_canvas_present - Presents canvas in the smol frame, requires smol frame to be included in the code before this file
+// - smol_canvas_t* canvas -- Pointer to the canvas
+// - smol_frame_t* frame   -- Pointer to the frame
+void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame);
+#endif 
+
+//smol_load_image_qoi - Loads a qoi image from a file
+// - const char* file_path -- A path to the qoi image file
+//Returns: smol_image_t - The result image
+smol_image_t smol_load_image_qoi(const char* file_path);
+
+//Blend functions
+//smol_pixel_blend_overwrite - Over writes a pixel in the destination
+// - smol_pixel_t dst -- Destination pixel color
+// - smol_pixel_t src -- Source pixel color
+// - smol_u32 x       -- Location X
+// - smol_u32 y       -- Location Y
+//Returns: smol_pixel_t - The Result pixel of this blend function
+smol_pixel_t smol_pixel_blend_overwrite(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y);
+
+//smol_pixel_blend_add - Adds the source and the destination pixel together
+// - smol_pixel_t dst -- Destination pixel color
+// - smol_pixel_t src -- Source pixel color
+// - smol_u32 x       -- Location X
+// - smol_u32 y       -- Location Y
+//Returns: smol_pixel_t  - The Result pixel of this blend function
+smol_pixel_t smol_pixel_blend_add(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y);
+
+//smol_pixel_blend_mul - Multiplies source and destination pixel together
+// - smol_pixel_t dst -- Destination pixel color
+// - smol_pixel_t src -- Source pixel color
+// - smol_u32 x       -- Location X
+// - smol_u32 y       -- Location Y
+//Returns: smol_pixel_t  - The Result pixel of this blend function 
+smol_pixel_t smol_pixel_blend_mul(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y);
+
+//smol_pixel_blend_mix - 
+// - smol_pixel_t dst -- Destination pixel color
+// - smol_pixel_t src -- Source pixel color
+// - smol_u32 x       -- Location X
+// - smol_u32 y       -- Location Y
+//Returns: smol_pixel_t  - The Result pixel of this blend function
+smol_pixel_t smol_pixel_blend_mix(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y);
+
+//smol_pixel_blend_alpha_clip - 
+// - smol_pixel_t dst -- Destination pixel color
+// - smol_pixel_t src -- Source pixel color
+// - smol_u32 x       -- Location X
+// - smol_u32 y       -- Location Y
+//Returns: smol_pixel_t  - The Result pixel of this blend function
+smol_pixel_t smol_pixel_blend_alpha_clip(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y);
+
+//Create image from existing buffer
+#define smol_image_create_from_buffer(width, height, buffer) smol_image_create_advanced(width, height, buffer, SMOLC_BLANK)
+
+//Create a new empty image
+#define smol_image_create(width, height) smol_image_create_advanced(width, height, NULL, SMOLC_BLANK)
+
+//Create a new color-filled image
+#define smol_image_create_filled(width, height, fill_color) smol_image_create_advanced(width, height, NULL, fill_color)
+
+#ifdef SMOL_CANVAS_IMPLEMENTATION
+
+#ifndef SMOL_MATH_H
+typedef union _smol_m3_t {
+	float m[9];
+	struct { float a[3], b[3], c[3]; };
+} smol_m3_t;
+#endif 
 
 smol_pixel_t smol_pixel_blend_overwrite(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y) {
 	return src;
@@ -190,9 +419,7 @@ smol_image_t smol_image_create_advanced(smol_u32 width, smol_u32 height, smol_pi
 
 }
 
-#define smol_image_create_from_buffer(width, height, buffer) smol_image_create_advanced(width, height, buffer, SMOLC_BLANK)
-#define smol_image_create(width, height) smol_image_create_advanced(width, height, NULL, SMOLC_BLANK)
-#define smol_image_create_filled(width, height, fill_color) smol_image_create_advanced(width, height, NULL, fill_color)
+
 #define smol_image_pixel_index(image, x, y) image->pixel_data[x + y * image->width]
 
 SMOL_INLINE void smol_image_destroy(smol_image_t* image) {
@@ -215,6 +442,14 @@ SMOL_INLINE void smol_image_blendpixel(smol_image_t* img, smol_u32 x, smol_u32 y
 SMOL_INLINE smol_pixel_t smol_image_getpixel(smol_image_t* img, smol_u32 x, smol_u32 y) {
 	return img->pixel_data[x + y * img->width];
 }
+
+typedef struct _smol_stack_t {
+	void* data;
+	smol_u32 element_size;
+	smol_u32 element_count;
+	smol_u32 total_allocation;
+} smol_stack_t;
+
 
 typedef struct _smol_canvas_t {
 	smol_image_t draw_surface;
@@ -277,7 +512,9 @@ void smol_canvas_set_color(smol_canvas_t* canvas, smol_pixel_t color) {
 }
 
 void smol_canvas_clear(smol_canvas_t* canvas, smol_pixel_t color) {
-	memset(canvas->draw_surface.pixel_data, color.pixel, canvas->draw_surface.width * canvas->draw_surface.height * 4);
+	for(smol_size_t i = 0; i < canvas->draw_surface.width * canvas->draw_surface.height; i++) {
+		canvas->draw_surface.pixel_data[i] = color;
+	}
 }
 
 void smol_canvas_push_color(smol_canvas_t* canvas) {
@@ -754,7 +991,7 @@ void smol_canvas_fill_triangle(smol_canvas_t* canvas, int x0, int y0, int x1, in
 #undef TMP_SWAP
 }
 
-void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char *text) {
+void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char* text) {
 
 	int gx = tx;
 	for (size_t i = 0; *text; ++i, ++text) {
@@ -787,6 +1024,7 @@ void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t fo
 	}
 }
 
+#ifdef SMOL_FRAME_H
 void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame) {
 	smol_frame_blit_pixels(
 		frame,
@@ -803,6 +1041,7 @@ void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame) {
 		canvas->draw_surface.height
 	);
 }
+#endif 
 
 //https://qoiformat.org/qoi-specification.pdf
 smol_image_t smol_load_image_qoi(const char* file_path) {
@@ -964,5 +1203,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 
 	return result;
 }
+
+#endif 
 
 #endif 
