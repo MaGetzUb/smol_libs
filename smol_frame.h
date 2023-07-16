@@ -1296,11 +1296,11 @@ LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPAR
 	}
 
 	smol_frame_t* frame = (smol_frame_t*)GetWindowLongPtr(wnd, GWLP_USERDATA);
+	smol_frame_event_t event = { 0 };
 
 	if(!frame || frame->frame_handle_win32 == NULL) 
 		goto def_proc;
 
-	smol_frame_event_t event = { 0 };
 	event.frame = frame;
 
 	switch(msg) {

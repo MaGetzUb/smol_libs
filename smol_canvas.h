@@ -35,8 +35,6 @@ distribution.
 #endif 
 
 //Some predefined color values
-#define SMOL_RGBA(R, G, B, A) (smol_pixel_t){ R, G, B, A }
-
 #define SMOL_RGB(R, G, B)		SMOL_RGBA(R,   G,   B, 255)
 #define SMOLC_BLANK				SMOL_RGBA(0,   0,   0,   0)
 
@@ -98,6 +96,15 @@ typedef union _smol_pixel_t {
 	smol_u32 pixel;
 } smol_pixel_t;
 
+#ifdef __cplusplus 
+SMOL_INLINE smol_pixel_t SMOL_RGBA(smol_u8 r, smol_u8 g, smol_u8 b, smol_u8 a) {
+	smol_pixel_t color = { r, g, b, a };
+	return color;
+}
+#else 
+#define SMOL_RGBA(r, g, b, a) (smol_pixel_t){r, g, b, a}
+#endif 
+
 //A structure of image
 typedef struct _smol_image_t {
 	smol_pixel_t* pixel_data;
@@ -119,6 +126,12 @@ typedef struct _smol_font_t {
 	int glyph_height;
 	smol_font_hor_geometry_t* geometry;
 } smol_font_t;
+
+#ifdef __cplusplus
+#define smol_create_font(glyphs, glyph_width, glyph_height, geometry) smol_font_t{ glyphs, glyph_width, glyph_height, geometry }
+#else 
+#define smol_create_font(glyphs, glyph_width, glyph_height, geometry) (smol_font_t){ glyphs, glyph_width, glyph_height, geometry }
+#endif 
 
 //The pixel blending callback type
 typedef smol_pixel_t(*smol_pixel_blend_func_proc)(smol_pixel_t, smol_pixel_t, smol_u32, smol_u32);
@@ -361,7 +374,7 @@ smol_pixel_t smol_pixel_blend_add(smol_pixel_t dst, smol_pixel_t src, smol_u32 x
 	if(b > 255) b = 255;
 	if(a > 255) a = 255;
 	
-	return (smol_pixel_t){ (smol_u8)r, (smol_u8)g, (smol_u8)b, (smol_u8)255 };
+	return SMOL_RGBA((smol_u8)r, (smol_u8)g, (smol_u8)b, (smol_u8)255);
 
 }
 
@@ -372,7 +385,7 @@ smol_pixel_t smol_pixel_blend_mul(smol_pixel_t dst, smol_pixel_t src, smol_u32 x
 	smol_u16 b = (src.b * dst.b) / 255;
 	smol_u16 a = (src.a * dst.a) / 255;
 
-	return (smol_pixel_t){ (smol_u8)r, (smol_u8)g, (smol_u8)b, (smol_u8)255 };
+	return SMOL_RGBA( (smol_u8)r, (smol_u8)g, (smol_u8)b, (smol_u8)255 );
 
 }
 
@@ -386,13 +399,13 @@ smol_pixel_t smol_pixel_blend_mix(smol_pixel_t dst, smol_pixel_t src, smol_u32 x
 	smol_u8 b = (sa * src.b + isa * dst.b) / 255U;
 	smol_u8 a = (sa * src.a + isa * dst.a) / 255U;
 	
-	return (smol_pixel_t){ r, g, b, 255 };
+	return SMOL_RGBA( r, g, b, 255 );
 
 }
 
 smol_pixel_t smol_pixel_blend_alpha_clip(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y) {
 	if(src.a > 127)
-		return (smol_pixel_t){ src.r, src.g, src.b, 255 };
+		return SMOL_RGBA( src.r, src.g, src.b, 255 );
 	return dst;
 }
 
@@ -403,7 +416,7 @@ smol_image_t smol_image_create_advanced(smol_u32 width, smol_u32 height, smol_pi
 	//When buffer is zero, new is allocated.;
 	if(!buffer) {
 		smol_size_t num_bytes = width * height * sizeof(smol_pixel_t);
-		buffer = malloc(num_bytes);
+		buffer = (smol_pixel_t*)malloc(num_bytes);
 		for(int i = 0; i < width*height; i++)
 			((smol_pixel_t*)buffer)[i] = color;
 		image.free_func = &free;
@@ -485,6 +498,15 @@ void* smol_stack_push(smol_stack_t* stack, void* data) {
 	);
 }
 
+#ifdef __cplusplus
+template <typename T>
+SMOL_INLINE void* smol_stack_push_immediate(smol_stack_t* stack, T value) {
+	return smol_stack_push(stack, (void*)&value);
+}
+#else 
+#define smol_stack_push_immediate(stack, immediate) smol_stack_push(stack, &(immediate))
+#endif 
+
 void smol_stack_pop(smol_stack_t* stack) {
 	stack->element_count--;
 }
@@ -501,8 +523,10 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 	canvas.transform_stack = smol_stack_new(smol_m3_t, 128);
 	canvas.blend_funcs = smol_stack_new(smol_pixel_blend_func_proc, 128);
 
-	smol_stack_push(&canvas.color_stack, &SMOLC_WHITE);
-	smol_stack_push(&canvas.blend_funcs, &(smol_pixel_blend_func_proc){ smol_pixel_blend_overwrite });
+	smol_stack_push_immediate(&canvas.color_stack, SMOLC_WHITE);
+	
+	smol_pixel_blend_func_proc proc = smol_pixel_blend_overwrite;
+	smol_stack_push_immediate(&canvas.blend_funcs, proc);
 
 	return canvas;
 }
@@ -1113,7 +1137,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 					fread(rgb, 1, 3, file);
 
 					index = HASH_RGBA(rgb[0], rgb[1], rgb[2], 255);
-					smol_pixel_t new_pixel = (smol_pixel_t){ rgb[0], rgb[1], rgb[2], 255 };
+					smol_pixel_t new_pixel = SMOL_RGBA( rgb[0], rgb[1], rgb[2], 255 );
 
 					pixel_data[pixel_index++] = new_pixel;
 					last_pixel = new_pixel;
@@ -1126,7 +1150,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 					fread(rgba, 1, 4, file);
 
 					index = HASH_RGBA(rgba[0], rgba[1], rgba[2], rgba[3]);
-					smol_pixel_t new_pixel = (smol_pixel_t){ rgba[0], rgba[1], rgba[2], rgba[3] };
+					smol_pixel_t new_pixel = SMOL_RGBA( rgba[0], rgba[1], rgba[2], rgba[3] );
 
 
 					pixel_data[pixel_index++] = new_pixel;
