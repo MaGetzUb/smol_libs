@@ -1,0 +1,28 @@
+﻿Build started 29.6.2023 17:05:12.
+Logging verbosity is set to: Normal.     1>Project "G:\Dev\smol_libs\experiment\experiment.vcxproj" on node 2 (Build target(s)).
+     1>InitializeBuildStatus:
+         Creating "x64\Debug\experiment.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.36.32532\bin\HostX64\x64\CL.exe /c /ZI /JMC /nologo /W3 /WX- /diagnostics:column /sdl /Od /D _DEBUG /D _CONSOLE /D _UNICODE /D UNICODE /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /permissive- /Fo"x64\Debug\\" /Fd"x64\Debug\vc143.pdb" /external:W3 /Gd /TC /FC /errorReport:prompt ..\win32_test.c
+         win32_test.c
+     1>G:\Dev\smol_libs\win32_test.c(19,38): warning C4047: 'function': 'const PIXELFORMATDESCRIPTOR *' differs in levels of indirection from 'int'
+     1>G:\Dev\smol_libs\win32_test.c(19,32): warning C4024: 'SetPixelFormat': different types for formal and actual parameter 3
+       Link:
+         C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.36.32532\bin\HostX64\x64\link.exe /ERRORREPORT:PROMPT /OUT:"G:\Dev\smol_libs\visualstudio\x64\Debug\experiment.exe" /INCREMENTAL /ILK:"x64\Debug\experiment.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"G:\Dev\smol_libs\visualstudio\x64\Debug\experiment.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"G:\Dev\smol_libs\visualstudio\x64\Debug\experiment.lib" /MACHINE:X64 x64\Debug\win32_test.obj
+         experiment.vcxproj -> G:\Dev\smol_libs\visualstudio\x64\Debug\experiment.exe
+       FinalizeBuildStatus:
+         Deleting file "x64\Debug\experiment.tlog\unsuccessfulbuild".
+         Touching "x64\Debug\experiment.tlog\experiment.lastbuildstate".
+     1>Done Building Project "G:\Dev\smol_libs\experiment\experiment.vcxproj" (Build target(s)).
+
+Build succeeded.
+
+       "G:\Dev\smol_libs\experiment\experiment.vcxproj" (Build target) (1) ->
+       (ClCompile target) -> 
+         G:\Dev\smol_libs\win32_test.c(19,38): warning C4047: 'function': 'const PIXELFORMATDESCRIPTOR *' differs in levels of indirection from 'int'
+         G:\Dev\smol_libs\win32_test.c(19,32): warning C4024: 'SetPixelFormat': different types for formal and actual parameter 3
+
+    2 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:00.62

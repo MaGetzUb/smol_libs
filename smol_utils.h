@@ -41,6 +41,7 @@ distribution.
 #	include <sys/time.h>
 #	include <time.h>
 #	include <fcntl.h>
+#	include <dirent.h>
 #elif defined(__APPLE__)
 #	define SMOL_PLATFORM_MAC_OS
 //TODO:
@@ -558,14 +559,14 @@ smol_file_scan_session_t smol_start_file_scan_session(smol_file_info_t* info) {
 
 	DIR* dir;
 	if((dir = opendir(".")) == NULL)
-		return nullptr;
+		return NULL;
 	struct dirent* ent = readdir(dir);
-	if(ent == nullptr) return NULL;
+	if(ent == NULL) return NULL;
 
-	memcpy(info->path, ent->d_name, strlen(ent->d_name));
+	memcpy(info->file_path, ent->d_name, strlen(ent->d_name));
 	struct stat status;
 	stat(ent->d_name, &status);
-	info->is_folder = (status.st_mode & S_IFDIR);
+	info->is_folder = S_ISDIR(status.st_mode);
 
 	return (smol_file_scan_session_t)dir;
 
@@ -581,10 +582,10 @@ int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info
 		return SMOL_FALSE;
 	} 
 
-	memcpy(info->path, ent->d_name, strlen(ent->d_name));
+	memcpy(info->file_path, ent->d_name, strlen(ent->d_name));
 	struct stat status;
 	stat(ent->d_name, &status);
-	info->is_folder = (status.st_mode & S_IFDIR);
+	info->is_folder = S_ISDIR(status.st_mode);
 
 	return SMOL_TRUE; 
 }
@@ -592,6 +593,7 @@ int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info
 void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
 
 	struct stat file_stat; 
+	void* buffer = NULL;
 
 	int fd = open(file_path, O_RDONLY);
 	
