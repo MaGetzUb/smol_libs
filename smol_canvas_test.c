@@ -32,10 +32,6 @@ int main() {
 
 	smol_file_info_t info = { 0 };
 	smol_file_scan_session_t filescan = smol_start_file_scan_session(&info);
-	do {
-		printf("%s\n", info.file_path);
-	} while(smol_file_scan_session_next(filescan, &info));
-
 
 	double loop_start = smol_timer();
 	int origin_x = 20;

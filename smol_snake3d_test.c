@@ -375,7 +375,7 @@ int main(const int argc, const char* argv[]) {
 	smol_text_renderer_t text_renderer = smol_text_renderer_create(&font16px, INDICES_PER_65K);
 
 	int occupatency_map[6][ARENA_SIDE * ARENA_SIDE];
-	int num_players = 1;
+	int num_players = 2;
 
 
 	view_partition_t viewports = create_viewport_partition(0, 0, 800, 600, (vp_spec_t[]) {

@@ -9,13 +9,17 @@
 #define SMOL_INPUT_IMPLEMENTATION
 #include "smol_input.h"
 
-typedef void audio_callback_proc(float* buffer, uint32_t channel, uint32_t numFrames);
+typedef void audio_callback_proc(uint32_t channel, float* buffer,uint32_t numFrames);
+
+EMSCRIPTEN_KEEPALIVE
+audio_callback_proc smol__audio_callback;
 
 #ifdef __EMSCRIPTEN__
 
 EMSCRIPTEN_KEEPALIVE
-void smol_audio_exec_callback(void* cb, float* buffer, uint32_t channel, uint32_t numFrames) {
-	((audio_callback_proc*)cb)(buffer, channel, numFrames);
+void smol_audio_exec_callback(uint32_t channel, float* buffer, uint32_t numFrames) {
+	if(smol__audio_callback)
+		smol__audio_callback(channel, buffer, numFrames);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -25,21 +29,34 @@ void worklet_message() {
 
 EM_ASYNC_JS(void, set_audio_callback, (audio_callback_proc proc), {
 
-	if(Module["audio_context"] == = undefined) {
+	if(Module["audio_context"] === undefined) {
 
 		const audioCtx = new AudioContext();
 		console.log("Audio context created.");
-		Module.audio_callback = Module.cwrap('int_sqrt', 'number', ['number']);
+		Module.audio_callback = Module.cwrap('smol_audio_exec_callback', 'void', ['number', 'number', 'number']);
 
 		const audioWorkletCode = `
 			class smol_audio_processor extends AudioWorkletProcessor {
-			constructor() {
+
+
+			constructor(options) {
 				super();
-				//console.log("smol_audio_processor created.")
-				//Module.ccall("worklet_message");
+				
+				this.callback = options.callback;
+				this.sampleRate = options.sampleRate;
+				this.invSampleRate = 1.0 / this.sampleRate;
+
+				console.log(callBack);
+				console.log(sampleRate);
+				console.log(invSampleRate);
+
 			}
 
 			process(inputs, outputs, parameters) {
+
+				for(var i = 0; i < outputs.length; i++) {
+					this.callback(i, outputs[i].byteOffset, outputs[i].length);
+				}
 
 				return true;
 			}
@@ -63,7 +80,12 @@ EM_ASYNC_JS(void, set_audio_callback, (audio_callback_proc proc), {
 				}
 			})).then(() => {
 
-				let audio_processor = new AudioWorkletNode(audioContext, 'smol_audio_worklet_processor');
+				let audio_processor = new AudioWorkletNode(audioContext, 'smol_audio_worklet_processor', {}
+					processorOptions: {
+						customData: { callback: audio_callback, sampleRate: audioCtx.sampleRate }
+					}
+				);
+				
 
 				source.buffer = audioBuffer;
 				source.connect(audio_processor).connect(audioCtx.destination);
@@ -82,16 +104,15 @@ EM_ASYNC_JS(void, set_audio_callback, (audio_callback_proc proc), {
 			console.log("Audio worklet creation failed! " + error);
 		}
 		
-		
-
-
 		Module.audio_context = audioCtx;
-	
+		smol__audio_callback = proc;
 	}
 
 });
 
 #endif 
+
+void smol__audio_callback();
 
 int main() {
 

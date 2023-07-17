@@ -38,39 +38,60 @@ distribution.
 #define SMOL_RGB(R, G, B)		SMOL_RGBA(R,   G,   B, 255)
 #define SMOLC_BLANK				SMOL_RGBA(0,   0,   0,   0)
 
-#define SMOLC_BLACK				SMOL_RGB(  0,   0,   0)
 #define SMOLC_WHITE				SMOL_RGB(255, 255, 255)
+#define SMOLC_LIGHT_GREY		SMOL_RGB(192, 192, 192)
 #define SMOLC_GREY				SMOL_RGB(128, 128, 128)
+#define SMOLC_DARK_GREY			SMOL_RGB( 64,  64,  64)
+#define SMOLC_DARKEST_GREY		SMOL_RGB( 32,  32,  32)
+#define SMOLC_BLACK				SMOL_RGB(  0,   0,   0)
 
 #define SMOLC_RED				SMOL_RGB(255,   0,   0)
-#define SMOLC_GREEN				SMOL_RGB(  0, 255,   0)
-#define SMOLC_BLUE				SMOL_RGB(  0,   0, 255)
-
+#define SMOLC_DARKENED_RED		SMOL_RGB(192,   0,   0)
 #define SMOLC_DARK_RED			SMOL_RGB(127,   0,   0)
-#define SMOLC_DARK_GREEN		SMOL_RGB(  0, 127,   0)
-#define SMOLC_DARK_BLUE			SMOL_RGB(  0,   0, 127)
+#define SMOLC_DARKER_RED		SMOL_RGB( 64,   0,   0)
+#define SMOLC_DARKEST_RED		SMOL_RGB( 32,   0,   0)
+
+#define SMOLC_GREEN				SMOL_RGB(0,  255,    0)
+#define SMOLC_DARKENED_GREEN	SMOL_RGB(0,  192,    0)
+#define SMOLC_DARK_GREEN		SMOL_RGB(0,  127,    0)
+#define SMOLC_DARKER_GREEN		SMOL_RGB(0,   64,    0)
+#define SMOLC_DARKEST_GREEN		SMOL_RGB(0,   32,    0)
+
+#define SMOLC_BLUE				SMOL_RGB(0,    0,  255)
+#define SMOLC_DARKENED_BLUE		SMOL_RGB(0,    0,  192)
+#define SMOLC_DARK_BLUE			SMOL_RGB(0,    0,  127)
+#define SMOLC_DARKER_BLUE		SMOL_RGB(0,    0,   64)
+#define SMOLC_DARKEST_BLUE		SMOL_RGB(0,    0,   32)
+
 
 #define SMOLC_YELLOW			SMOL_RGB(255, 255,   0)
-#define SMOLC_CYAN				SMOL_RGB(  0, 255, 255)
-#define SMOLC_MAGENTA			SMOL_RGB(255,   0, 255)
-
 #define SMOLC_DARK_YELLOW		SMOL_RGB(127, 127,   0)
+
+#define SMOLC_CYAN				SMOL_RGB(  0, 255, 255)
 #define SMOLC_DARK_CYAN			SMOL_RGB(  0, 127, 127)
+
+#define SMOLC_MAGENTA			SMOL_RGB(255,   0, 255)
 #define SMOLC_DARK_MAGENTA		SMOL_RGB(127,   0, 127)
 
-#define SMOLC_ORANGE			SMOL_RGB(255, 127,   0)
-#define SMOLC_HOTPINK			SMOL_RGB(255,   0, 127)
-#define SMOLC_AQUA				SMOL_RGB(  0, 255, 127)
-#define SMOLC_LIMEGREEN			SMOL_RGB(127, 255,   0)
-#define SMOLC_VIOLET			SMOL_RGB(127,   0, 255)
-#define SMOLC_SKYBLUE			SMOL_RGB( 0,  127, 255)
 
+#define SMOLC_ORANGE			SMOL_RGB(255, 127,   0)
 #define SMOLC_BROWN				SMOL_RGB(127,  63,   0)
+
+#define SMOLC_HOTPINK			SMOL_RGB(255,   0, 127)
 #define SMOLC_DARK_HOTPINK		SMOL_RGB(127,   0, 63)
+
+#define SMOLC_AQUA				SMOL_RGB(  0, 255, 127)
 #define SMOLC_DARK_AQUA			SMOL_RGB(  0, 127, 63)
+
+#define SMOLC_LIMEGREEN			SMOL_RGB(127, 255,   0)
 #define SMOLC_DARK_LIMEGREEN	SMOL_RGB(63, 127,   0)
+
+#define SMOLC_VIOLET			SMOL_RGB(127,   0, 255)
 #define SMOLC_DARK_VIOLET		SMOL_RGB(63,   0, 127)
+
+#define SMOLC_SKYBLUE			SMOL_RGB( 0,  127, 255)
 #define SMOLC_DARK_SKYBLUE		SMOL_RGB( 0,  63, 127)
+
 
 //Some types that are useful
 #if _WIN64
@@ -78,9 +99,10 @@ typedef unsigned long long smol_size_t;
 #else 
 typedef unsigned int smol_size_t;
 #endif 
-typedef unsigned int smol_u32;
-typedef unsigned short smol_u16;
+typedef char smol_i8;
 typedef unsigned char smol_u8;
+typedef unsigned short smol_u16;
+typedef unsigned int smol_u32;
 
 //Forward declare the canvas
 typedef struct _smol_canvas_t smol_canvas_t;
@@ -284,7 +306,9 @@ void smol_canvas_fill_triangle(smol_canvas_t* canvas, int x0, int y0, int x1, in
 // - smol_font_t font      -- Font to draw the text with
 // - int scale             -- Scale of the resulting text
 // - const char* text      -- The text to be drawn
-void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char* text);
+void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char* str);
+
+void smol_text_size(smol_font_t font, int scale, const char* str, int* w, int* h);
 
 
 #ifdef SMOL_FRAME_H
@@ -533,6 +557,41 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 
 void smol_canvas_set_color(smol_canvas_t* canvas, smol_pixel_t color) {
 	smol_stack_back(canvas->color_stack, smol_pixel_t) = color;
+}
+
+void smol_canvas_darken_color(smol_canvas_t* canvas, smol_u16 percentage) {
+	
+	smol_pixel_t color = smol_stack_back(canvas->color_stack, smol_pixel_t);
+	
+	smol_u8 r = ((color.r * percentage) / 100);
+	smol_u8 g = ((color.g * percentage) / 100);
+	smol_u8 b = ((color.a * percentage) / 100);
+	
+	color.r = (color.r < r) ? 0 : color.r - r;
+	color.g = (color.g < g) ? 0 : color.g - g;
+	color.b = (color.b < b) ? 0 : color.b - b;
+
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = SMOL_RGBA(color.r, color.g, color.b, color.a);
+}
+
+
+void smol_canvas_lighten_color(smol_canvas_t* canvas, smol_u16 percentage) {
+	
+	smol_pixel_t color = smol_stack_back(canvas->color_stack, smol_pixel_t);
+	
+	smol_u8 r = ((color.r * percentage) / 100);
+	smol_u8 g = ((color.g * percentage) / 100);
+	smol_u8 b = ((color.a * percentage) / 100);
+	
+	smol_u16 cr = color.r + r;
+	smol_u16 cg = color.g + g;
+	smol_u16 cb = color.b + b;
+
+	if(cr > 255) cr = 255;
+	if(cg > 255) cg = 255;
+	if(cb > 255) cb = 255;
+
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = SMOL_RGBA(color.r, color.g, color.b, color.a);
 }
 
 void smol_canvas_clear(smol_canvas_t* canvas, smol_pixel_t color) {
@@ -856,9 +915,9 @@ void smol_canvas_fill_rect(smol_canvas_t* canvas, int x, int y, int w, int h) {
 	int right =  ((x + w) < cw) ? w : ((x + w) - cw);
 	int bottom = ((y + h) < ch) ? h : ((y + h) - ch);
 
-	for(int j = left; j < right; j++)
-	for(int i = top; i < bottom; i++)
-		smol_image_blendpixel(&canvas->draw_surface, x + i, y + j, color, blend);
+	for(int py = top; py < bottom; py++)
+	for(int px = left; px < right; px++)
+		smol_image_blendpixel(&canvas->draw_surface, x + px, y + py, color, blend);
 
 }
 
@@ -1015,16 +1074,16 @@ void smol_canvas_fill_triangle(smol_canvas_t* canvas, int x0, int y0, int x1, in
 #undef TMP_SWAP
 }
 
-void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char* text) {
+void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t font, int scale, const char* str) {
 
 	int gx = tx;
-	for (size_t i = 0; *text; ++i, ++text) {
+	for(smol_size_t i = 0; *str; ++i, ++str) {
 
 		int gy = ty;
-		const char *glyph = &font.glyphs[(*text)*font.glyph_width*font.glyph_height];
+		const char *glyph = &font.glyphs[(*str)*font.glyph_width*font.glyph_height];
 
 		for(int dy = 0; dy < font.glyph_height; ++dy)
-		for(int dx = 0; dx < font.geometry[*text].width+1; ++dx) {
+		for(int dx = 0; dx < font.geometry[*str].width+1; ++dx) {
 
 			int px = gx + dx*scale;
 			int py = gy + dy*scale;
@@ -1034,19 +1093,51 @@ void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, smol_font_t fo
 				px < (int)canvas->draw_surface.width && 0 <= py && 
 				py < (int)canvas->draw_surface.height
 			) {
-				if (glyph[dy*font.glyph_width + dx + font.geometry[*text].offset_x]) {
+				if (glyph[dy*font.glyph_width + dx + font.geometry[*str].offset_x]) {
 					smol_canvas_fill_rect(canvas, px, py, scale, scale);
 				}
 			}
 
 		}
 		
-		if(*text == ' ')
+		if(*str == ' ')
 			gx += font.geometry['_'].width;
 		else 
-			gx += (int)((font.geometry[*text].width+2ull)*scale);
+			gx += (int)((font.geometry[*str].width+2ull)*scale);
 	}
 }
+
+void smol_text_size(smol_font_t font, int scale, const char* str, int* w, int* h) {
+
+	*w = 0;
+	*h = 0;
+
+	int x = 0;
+	int y = 0;
+	const char* s = str;
+
+	for(;*s;s++) {
+		
+		switch(*s) {
+			case '\n':
+				x = 0;
+				y += font.glyph_height * scale;
+			break;
+			case ' ': x += font.geometry['_'].width; break;
+			case '\t': x += font.geometry['_'].width * 2; break;
+			default: x += (font.geometry[*s].width+2); break;
+		}
+		
+		*w = (x > *w) ? x : *w;
+		*h = (y > *h) ? y : *h;
+	}
+
+	*w = *w * scale;
+	*h += font.glyph_height*scale;
+}
+
+
+
 
 #ifdef SMOL_FRAME_H
 void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame) {

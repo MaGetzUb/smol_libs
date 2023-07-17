@@ -173,6 +173,8 @@ typedef struct __GLXcontextRec *GLXContext;
 #define SMOL_TRUE 1
 #define SMOL_FALSE 0
 
+#define SMOL_FRAME_EVENT_LOOP(frame, it) for(smol_frame_event_t it; smol_frame_acquire_event(frame, &it);) 
+
 //Forward declare smol frame gl specification structure
 typedef struct _smol_frame_gl_spec_t smol_frame_gl_spec_t;
 

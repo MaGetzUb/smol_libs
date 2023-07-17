@@ -69,7 +69,7 @@ typedef struct _smol_file_info smol_file_info_t;
 
 #ifdef _MSC_VER
 #define SMOL_THREAD_LOCAL __declspec(thread)
-#	ifdef SMOL_INLINE
+#	ifndef SMOL_INLINE
 #		define SMOL_INLINE __forceinline
 #	endif 
 #else 
@@ -88,13 +88,6 @@ double smol_timer();
 /* --------------------------------------- */
 /* SOME UNICODE CONVERSION FUNCTIONALITY   */
 /* --------------------------------------- */
-
-//smol_read_entire_file - Opens a file and reads it into a buffer.
-//Arguments:
-// - const char* file_path    -- A path to a file
-// - unsigned long long* size -- A pointer to 64bit-uint containing number of bytes read
-//Returns: void* - a pointer to the buffer
-void* smol_read_entire_file(const char* file_path, smol_size_t* size);
 
 //smol_utf8_to_utf32 - Converts utf8 encoded character into utf32 codepoint
 //Arguments:
@@ -171,10 +164,27 @@ int smol_rnd(int minimum, int maximum);
 //Returns: float - containing the random number
 float smol_rndf(float minimum, float maximum);
 
-//float SMOL_INLINE smol_map(float value, float low, float high, float new_low, float new_high) {
-//	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
-//}
+//smol_remapf - Remaps a float value between old range into between a new range
+//Arguments:
+// - float value    -- The value that's being remapped
+// - float low      -- The old range's lowest value
+// - float high     -- The old range's highest value
+// - float new_low  -- The new range's lowest value
+// - float new_high -- The new range's highest value
+SMOL_INLINE float smol_remapf(float value, float low, float high, float new_low, float new_high) {
+	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
+}
 
+//smol_remapf - Remaps a double value between old range into between a new range
+//Arguments:
+// - double value    -- The value that's being remapped
+// - double low      -- The old range's lowest value
+// - double high     -- The old range's highest value
+// - double new_low  -- The new range's lowest value
+// - double new_high -- The new range's highest value
+SMOL_INLINE float smol_remapd(double value, double low, double high, double new_low, double new_high) {
+	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
+}
 /* ------------------------------ */
 /* SOME FILE SYSTEM FUNCTIONALITY */
 /* ------------------------------ */
@@ -183,6 +193,13 @@ typedef struct _smol_file_info {
 	char is_folder;
 	char file_path[512];
 } smol_file_info_t;
+
+//smol_read_entire_file - Opens a file and reads it into a buffer.
+//Arguments:
+// - const char* file_path    -- A path to a file
+// - unsigned long long* size -- A pointer to 64bit-uint containing number of bytes read
+//Returns: void* - a pointer to the buffer
+void* smol_read_entire_file(const char* file_path, smol_size_t* size);
 
 //smol_get_current_directory - Gets the current directory
 //Returns: const char* - A pointer to static variable within the function where current directory path is stored.
