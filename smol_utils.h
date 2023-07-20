@@ -68,15 +68,15 @@ typedef void* smol_file_scan_session_t;
 typedef struct _smol_file_info smol_file_info_t;
 
 #ifdef _MSC_VER
-#define SMOL_THREAD_LOCAL __declspec(thread)
 #	ifndef SMOL_INLINE
 #		define SMOL_INLINE __forceinline
 #	endif 
+#	define SMOL_THREAD_LOCAL __declspec(thread)
 #else 
 #	ifndef SMOL_INLINE
 #		define SMOL_INLINE inline __attribute__((always_inline)) 
 #	endif 
-#define SMOL_THREAD_LOCAL __thread
+#	define SMOL_THREAD_LOCAL __thread
 #endif 
 //smol_timer - Returns high precision system up time in seconds on
 //             Windows, and high precision time since Unix epoch on Linux. 
@@ -224,7 +224,6 @@ smol_file_scan_session_t smol_start_file_scan_session(smol_file_info_t* info);
 //Returns: smol_file_scan_session_t - A handle to the file system scan session
 int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info_t* info);
 
-#endif 
 
 #ifdef SMOL_UTILS_IMPLEMENTATION
 
@@ -814,4 +813,5 @@ int smol_file_scan_session_next(smol_file_scan_session_t session, smol_file_info
 
 #endif 
 
+#endif 
 #endif 

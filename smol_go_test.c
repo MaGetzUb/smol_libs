@@ -6,15 +6,14 @@
 #define SMOL_CANVAS_IMPLEMENTATION
 #include "smol_canvas.h"
 
-#define SMOL_INPUT_IMPLEMENTATION
-#include "smol_input.h"
-
 #define SMOL_UTILS_IMPLEMENTATION
 #include "smol_utils.h"
 
+#define SMOL_INPUT_IMPLEMENTATION
+#include "smol_input.h"
+
+
 #include "smol_font_16x16.h"
-#define X 1
-#define O 2
 
 #define CELL_SIDE 20
 
@@ -52,19 +51,22 @@ int do_button(smol_canvas_t* canvas, smol_font_t* font, int x, int y, int w, int
 	}
 
 	smol_canvas_push_color(canvas);
+	if(highlight) smol_canvas_lighten_color(canvas, 10);
 
+	//Fill background
 	smol_canvas_push_color(canvas);
 	smol_canvas_darken_color(canvas, 30);
 	smol_canvas_fill_rect(canvas, x, y, w, h);
 	smol_canvas_pop_color(canvas);
 
+	//Draw edges
 	smol_canvas_push_color(canvas);
 	smol_canvas_darken_color(canvas, 15);
 	smol_canvas_draw_rect(canvas, x, y, w, h);
 	smol_canvas_pop_color(canvas);
 
+	//Draw text
 	smol_canvas_push_color(canvas);
-	
 	smol_canvas_lighten_color(canvas, 20);
 	if(pressed) smol_canvas_lighten_color(canvas, 50);
 
@@ -178,8 +180,9 @@ int main() {
 			animating = 1, anim_time = smol_timer();
 
 		smol_canvas_clear(&canvas, SMOLC_DARKEST_GREY);
-	
-		smol_canvas_set_color(&canvas, SMOLC_GREY);
+
+		smol_canvas_set_color(&canvas, SMOLC_DARKEST_GREY);
+		smol_canvas_lighten_color(&canvas, 50);
 		if(victory_state == 0) 
 			smol_canvas_fill_rect(&canvas, sx * CELL_SIDE, sy* CELL_SIDE, CELL_SIDE, CELL_SIDE);
 

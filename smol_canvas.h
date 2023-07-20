@@ -26,17 +26,19 @@ distribution.
 
 #include <string.h>
 
-#ifndef SMOL_INLINE
 #ifdef _MSC_VER
-#define SMOL_INLINE __forceinline
+#	ifndef SMOL_INLINE
+#		define SMOL_INLINE __forceinline
+#	endif 
 #else 
-#define SMOL_INLINE inline __attribute__((inline_always))
-#endif 
+#	ifndef SMOL_INLINE
+#		define SMOL_INLINE inline __attribute__((always_inline)) 
+#	endif 
 #endif 
 
 //Some predefined color values
-#define SMOL_RGB(R, G, B)		SMOL_RGBA(R,   G,   B, 255)
-#define SMOLC_BLANK				SMOL_RGBA(0,   0,   0,   0)
+#define SMOL_RGB(R, G, B)		SMOL_RGBA(   R,   G,   B, 255)
+#define SMOLC_BLANK				SMOL_RGBA(   0,   0,   0,   0)
 
 #define SMOLC_WHITE				SMOL_RGB(255, 255, 255)
 #define SMOLC_LIGHT_GREY		SMOL_RGB(192, 192, 192)
@@ -92,9 +94,13 @@ distribution.
 #define SMOLC_SKYBLUE			SMOL_RGB( 0,  127, 255)
 #define SMOLC_DARK_SKYBLUE		SMOL_RGB( 0,  63, 127)
 
+//TODO:
+// - Clip rects
+// - Transformations 
+// - Smooth drawing
 
 //Some types that are useful
-#if _WIN64
+#if _WIN64 || __linux__
 typedef unsigned long long smol_size_t;
 #else 
 typedef unsigned int smol_size_t;
@@ -393,10 +399,10 @@ smol_pixel_t smol_pixel_blend_add(smol_pixel_t dst, smol_pixel_t src, smol_u32 x
 	smol_u32 b = src.b*src.a + dst.b;
 	smol_u32 a = src.a*src.a + dst.a;
 
-	if(r > 255) r = 255;
-	if(g > 255) g = 255;
-	if(b > 255) b = 255;
-	if(a > 255) a = 255;
+	if(r > 255) r = 255U;
+	if(g > 255) g = 255U;
+	if(b > 255) b = 255U;
+	if(a > 255) a = 255U;
 	
 	return SMOL_RGBA((smol_u8)r, (smol_u8)g, (smol_u8)b, (smol_u8)255);
 
@@ -404,10 +410,10 @@ smol_pixel_t smol_pixel_blend_add(smol_pixel_t dst, smol_pixel_t src, smol_u32 x
 
 smol_pixel_t smol_pixel_blend_mul(smol_pixel_t dst, smol_pixel_t src, smol_u32 x, smol_u32 y) {
 	
-	smol_u16 r = (src.r * dst.r) / 255;
-	smol_u16 g = (src.g * dst.g) / 255;
-	smol_u16 b = (src.b * dst.b) / 255;
-	smol_u16 a = (src.a * dst.a) / 255;
+	smol_u16 r = (src.r * dst.r) / 255U;
+	smol_u16 g = (src.g * dst.g) / 255U;
+	smol_u16 b = (src.b * dst.b) / 255U;
+	smol_u16 a = (src.a * dst.a) / 255U;
 
 	return SMOL_RGBA( (smol_u8)r, (smol_u8)g, (smol_u8)b, (smol_u8)255 );
 
@@ -579,9 +585,9 @@ void smol_canvas_lighten_color(smol_canvas_t* canvas, smol_u16 percentage) {
 	
 	smol_pixel_t color = smol_stack_back(canvas->color_stack, smol_pixel_t);
 	
-	smol_u8 r = ((color.r * percentage) / 100);
-	smol_u8 g = ((color.g * percentage) / 100);
-	smol_u8 b = ((color.a * percentage) / 100);
+	smol_u16 r = ((color.r * percentage) / 100);
+	smol_u16 g = ((color.g * percentage) / 100);
+	smol_u16 b = ((color.b * percentage) / 100);
 	
 	smol_u16 cr = color.r + r;
 	smol_u16 cg = color.g + g;
@@ -591,7 +597,7 @@ void smol_canvas_lighten_color(smol_canvas_t* canvas, smol_u16 percentage) {
 	if(cg > 255) cg = 255;
 	if(cb > 255) cb = 255;
 
-	smol_stack_back(canvas->color_stack, smol_pixel_t) = SMOL_RGBA(color.r, color.g, color.b, color.a);
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = SMOL_RGBA(cr, cg, cb, color.a);
 }
 
 void smol_canvas_clear(smol_canvas_t* canvas, smol_pixel_t color) {
@@ -912,8 +918,8 @@ void smol_canvas_fill_rect(smol_canvas_t* canvas, int x, int y, int w, int h) {
 
 	int left = (x < 0) ? -x : 0;
 	int top = (y < 0) ? -y : 0;
-	int right =  ((x + w) < cw) ? w : ((x + w) - cw);
-	int bottom = ((y + h) < ch) ? h : ((y + h) - ch);
+	int right =  ((x + w) < cw) ? w : ((x + w) - cw+1);
+	int bottom = ((y + h) < ch) ? h : ((y + h) - ch+1);
 
 	for(int py = top; py < bottom; py++)
 	for(int px = left; px < right; px++)
