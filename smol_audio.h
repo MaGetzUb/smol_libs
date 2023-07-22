@@ -262,10 +262,11 @@ int smol_audio_shut_down() {
 #ifdef SMOL_AUDIO_BACKEND_WASAPI
 typedef HRESULT smol_CoCreateInstance_proc(const IID* const rclsid, LPUNKNOWN pUnkOuter, DWORD dwClsContext, const IID* const riid, LPVOID* ppv);
 typedef HRESULT smol_CoInitializeEx_proc(LPVOID pvReserved, DWORD  dwCoInit);
-
+typedef void __stdcall smol_CoTaskMemFree_proc(_Frees_ptr_opt_ LPVOID pv);
 
 smol_CoInitializeEx_proc* smol_CoInitializEx;
 smol_CoCreateInstance_proc* smol_CoCreateInstance;
+smol_CoTaskMemFree_proc* smol_CoTaskMemFree;
 
 typedef struct smol_audio_context_t {
 	IMMDevice* audio_device;
@@ -307,6 +308,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 
 	smol_CoInitializEx = (smol_CoInitializeEx_proc*)GetProcAddress(module, "CoInitializeEx");
 	smol_CoCreateInstance = (smol_CoCreateInstance_proc*)GetProcAddress(module, "CoCreateInstance");
+	smol_CoTaskMemFree = (smol_CoTaskMemFree_proc*)GetProcAddress(module, "CoTaskMemFree");
 
 	HRESULT hres = smol_CoInitializEx(NULL, COINIT_MULTITHREADED);
 
@@ -351,6 +353,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 		fprintf(stderr, "FAILED to get audio renderer mix format!");
 	}
 
+	/*TODO: stuff?*/
 	if(wave_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
 			WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)wave_format;
 
@@ -367,7 +370,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 			result_format = *ext;
 	}	
 	else {
-		memcpy(&result_format.Format, wave_format, sizeof(wave_format));
+		result_format.Format = *wave_format;
 	}
 
 
@@ -406,7 +409,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 			smol__audio_context.wave_format = result_format.Format;
 	}	
 
-	if(wave_format) CoTaskMemFree((LPVOID)wave_format), wave_format = NULL;
+	if(wave_format) smol_CoTaskMemFree((LPVOID)wave_format), wave_format = NULL;
 
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to start audio renderer!");
@@ -427,7 +430,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 
 failure:
 
-	if(wave_format) CoTaskMemFree((LPVOID)wave_format);
+	if(wave_format) smol_CoTaskMemFree((LPVOID)wave_format);
 
 	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_renderer);
 	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_client);
