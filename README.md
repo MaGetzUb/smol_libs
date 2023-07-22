@@ -50,6 +50,8 @@ Also there's several tests:
 
 ### On Emscripten
 > _This command should apply everything in this repo, if it doesn't I'll update it later_
-> `emcc smol_xxxx_test.c -o smol_xxx_test.html -sFULL_ES2=1 -sFULL_ES3=1 -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2  -s WASM=1 -sAUDIO_WORKLET=1 -sWASM_WORKERS=1 -sASYNCIFY=1 `
+> ```
+> emcc smol_xxxx_test.c -o smol_xxx_test.html -sFULL_ES2=1 -sFULL_ES3=1 -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2  -s WASM=1 -sAUDIO_WORKLET=1 -sWASM_WORKERS=1 -sASYNCIFY=1 
+> ```
 
 TODO: build scripts
