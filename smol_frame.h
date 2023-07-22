@@ -48,6 +48,10 @@ And run:
 
 NOTE: Linux does need the libx11-dev package for the X11 related headers though.
 
+NOTE: If you want your application code not to change for Web, you need to add 
+-s ASYNCIFY=1 to the linker options. The smol_frame_update then will yield from
+the main loop with emscripten_sleep(0).
+
 XCB is bit more cumbersome, because you need these packages:
 - libxcb-devel
 - libxcb-icccm4-dev
@@ -3683,25 +3687,13 @@ void smol_frame_blit_pixels(
 ) {
 	EM_ASM({
 
-		/*
-		$0 = element
-		$1 = pixBuf
-		$2 = pixBufW
-		$3 = pixBufH
-		$4 = dstX
-		$5 = dstY
-		$6 = dstW
-		$7 = dstH
-		$8 = srcX
-		$9 = srcY
-		$10 = scrW
-		$11 = srcH
-		*/
-
 		const xscale_fact = $6 / $10;
 		const yscale_fact = $6 / $10;
-		const uintBuffer = new Uint8ClampedArray(Module.HEAPU8.buffer, $1 + ($8 + $9 * $2) * 4, $10 * $11 * 4);
-		Module.ctx2D.putImageData(new ImageData(uintBuffer, $10, $11), $4, $5, 0, 0, $6, $7);
+		
+		const imageData = new ImageData($10, $11);
+		imageData.data.set(new Uint8ClampedArray(Module.HEAPU8.buffer, $1 + ($8 + $9 * $2) * 4, $10 * $11 * 4));
+
+		Module.ctx2D.putImageData(imageData, $4, $5, 0, 0, $6, $7);
 		Module.ctx2D.drawImage(Module.canvas, 0, 0, xscale_fact * Module.canvas.width, yscale_fact * Module.canvas.height);
 	}, frame->element, pixBuf, pixBufWidth, pixBufHeight, dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH);
 }
