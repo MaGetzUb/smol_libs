@@ -59,6 +59,7 @@ TODO: Linux backend aswell as DirectSound fallback-backend for older hardware
 #define CINTERFACE
 #include <dsound.h>
 #endif 
+#endif 
 
 #ifdef __EMSCRIPTEN__
 #ifndef SMOL_PLATFORM_WEB
@@ -252,7 +253,7 @@ int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data)
 	smol__audio_context.callback_data->user_data = user_data;
 }
 
-int smol_audio_shut_down() {
+int smol_audio_shutdown() {
 	EM_ASM({emscriptenGetAudioObject($0).disconnect()}, smol__audio_context.worklet_node);
 }
 #endif 
