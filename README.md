@@ -12,14 +12,14 @@ So far I've made
 * [smol_text_renderer.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_text_renderer.h) A simple text renderer that batch renders a text. 
 
 Also there's several tests: 
-[smol_frame_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_frame_test.c) to test window events and inputs (also pixel blitting with)
-[smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_snake_test.c) a simple game to prove that the api can be utilized for games.
-[smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_gl_test.c) a simple rotating hello triangle to demonstrate OpenGL support.
-[smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_snake3d_test.c) a simple game to prove that the api can be utilized for 3D games, with OpenGL.
-[smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_go_test.c) a simple go game with smol_canvas.
-[smol_pix_font_creator.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_pix_font_creator.c) a pixel font creator for generating (ASCII) glyph atlas for `Olivec_Font`. Utilises also [tinyFileDialogs](https://sourceforge.net/projects/tinyfiledialogs/).
-[smol_canvas_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_canvas_test.c) to demonstrated rendering with smol_canvas. 
-[smol_audio_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_audio_test.c) to demonstrated audio output. 
+* [smol_frame_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_frame_test.c) to test window events and inputs (also pixel blitting with `smol_frame_blit_pixels`)
+* [smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_snake_test.c) a simple game to prove that the api can be utilized for games.
+* [smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_gl_test.c) a simple rotating hello triangle to demonstrate OpenGL support.
+* [smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_snake3d_test.c) a simple game to prove that the api can be utilized for 3D games, with OpenGL.
+* [smol_snake_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_go_test.c) a simple go game with smol_canvas.
+* [smol_pix_font_creator.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_pix_font_creator.c) a pixel font creator for generating (ASCII) glyph atlas for `Olivec_Font`. Utilises also [tinyFileDialogs](https://sourceforge.net/projects/tinyfiledialogs/).
+* [smol_canvas_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_canvas_test.c) to demonstrated rendering with smol_canvas. 
+* [smol_audio_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_audio_test.c) to demonstrated audio output. 
 
 ### Building on Windows
 > _by using Microsoft Visual Studio 2022 Command prompt_
