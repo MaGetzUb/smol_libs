@@ -1,5 +1,5 @@
 /*
-Copyright © 2023 Marko Ranta (Discord: coderunner)
+Copyright ï¿½ 2023 Marko Ranta (Discord: coderunner)
 
 This software is provided *as-is*, without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -68,8 +68,20 @@ TODO: Linux backend aswell as DirectSound fallback-backend for older hardware
 #include <emscripten/emscripten.h>
 #include <emscripten/webaudio.h>
 #endif 
+
+#ifdef _MSC_VER
+#	ifndef SMOL_INLINE
+#		define SMOL_INLINE __forceinline
+#	endif 
+#else 
+#	ifndef SMOL_INLINE
+#		define SMOL_INLINE inline __attribute__((always_inline)) 
+#	endif 
+#endif 
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 typedef void smol_audio_callback_proc(
 	int num_input_channels,
@@ -83,11 +95,170 @@ typedef void smol_audio_callback_proc(
 	void* user_data
 );
 
+typedef enum voice_state {
+	SMOL_VOICE_STATE_STOPPED = 0,
+	SMOL_VOICE_STATE_PLAYING,
+	SMOL_VOICE_STATE_PAUSED
+} voice_state;
+
+typedef struct _smol_mixer_t smol_mixer_t;
+typedef struct _smol_voice_t smol_voice_t;
+typedef float smol_voice_sample_gen_proc(smol_voice_t* voice, int channel, double sample_rate, double inv_sample_rate, void* user_data);
 int smol_audio_init(int sample_rate, int num_channels);
 int smol_audio_shutdown();
 int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data);
 
 #ifdef SMOL_AUDIO_IMPLEMENTATION
+
+typedef struct _smol_voice_t {
+	double time_offset;
+	double time_scale;
+	float gain;
+	float balance[3]; //XYZ
+	volatile voice_state state;
+	smol_voice_sample_gen_proc* callback;
+	void* user_data;
+} smol_voice_t;
+
+typedef struct _smol_mixer_t {
+	smol_voice_t voices[64];
+	unsigned long long active_voices_mask; //Bitmask 
+	smol_audio_callback_proc* post_mix_callback;
+	void* post_mix_user_data;
+	int num_active_voices;
+} smol_mixer_t;
+
+
+SMOL_INLINE int smol_bsf(unsigned long long mask) {
+#ifdef _MSC_VER
+	DWORD res;
+	BOOL b = BitScanForward64(&res, mask);
+	return res;
+#else
+	return __builtin_ctzll(mask);
+#endif 
+}
+
+SMOL_INLINE int smol_bsr(unsigned long long mask) {
+#ifdef _MSC_VER
+	DWORD res; 
+	BitScanReverse64(&res, mask);
+	return res;
+#else
+	if(mask == 0) return 0;
+	return 63-__builtin_clzll(mask);
+#endif
+}
+
+int smol_mixer_playing_voice_count(smol_mixer_t* mixer) {
+	return mixer->num_active_voices;
+}
+
+int smol_mixer_next_free_handle(smol_mixer_t* mixer) {
+	if(mixer->active_voices_mask == 0xFFFFFFFFFFFFFFFFULL)
+		return -1;
+	return smol_bsf(~mixer->active_voices_mask);
+}
+
+int smol_mixer_play_voice(smol_mixer_t* mixer, smol_voice_sample_gen_proc* callback, void* userdata, float gain, float balance[3]) {
+
+	if(mixer->active_voices_mask == 0xFFFFFFFFFFFFFFFFULL)
+		return -1;
+
+	unsigned int free_index = smol_mixer_next_free_handle(mixer);
+
+	smol_voice_t* voice = &mixer->voices[free_index];
+	voice->time_offset = 0.;
+	voice->time_scale = 1.;
+	voice->gain = gain;
+	voice->balance[0] = balance[0];
+	voice->balance[1] = balance[1];
+	voice->balance[2] = balance[2];
+	voice->state = SMOL_VOICE_STATE_PLAYING;
+	voice->callback = callback;
+	voice->user_data = userdata;
+	mixer->active_voices_mask |= (1 << free_index);
+	mixer->num_active_voices++;
+
+	return free_index;
+}
+
+void smol_mixer_pause_voice(smol_mixer_t* mixer, int handle) {
+	mixer->voices[handle].state = SMOL_VOICE_STATE_PAUSED;
+}
+
+void smol_mixer_stop_voice(smol_mixer_t* mixer, int handle) {
+	mixer->voices[handle].state = SMOL_VOICE_STATE_STOPPED;
+}
+
+
+void smol_mixer_update(smol_mixer_t* mixer) {
+	int last_index = smol_bsr(mixer->active_voices_mask);
+
+	for(int i = 0; i < last_index+1; i++) {
+		if(!(mixer->active_voices_mask & (1 << i)))
+			continue;
+		if(mixer->voices[i].state == SMOL_VOICE_STATE_STOPPED) {
+			mixer->num_active_voices--;
+		#if __cplusplus
+			mixer->voices[i] = smol_voice_t{ 0 };
+		#else
+			mixer->voices[i] = (smol_voice_t){ 0 };
+		#endif 
+			mixer->active_voices_mask &= ~(1 << i);
+		}
+	}
+
+}
+
+void smol_mixer_mix(
+	int num_input_channels,
+	int num_input_samples,
+	const float** inputs,
+	int num_output_channels,
+	int num_output_samples,
+	float** outputs,
+	double sample_rate,
+	double inv_sample_rate,
+	void* user_data
+) {
+	smol_mixer_t* mixer = (smol_mixer_t*)user_data;
+	int last_index = smol_bsr(mixer->active_voices_mask);
+
+	for(int i = 0; i <= last_index; i++) {
+		smol_voice_t* voice = &mixer->voices[i];
+		if(voice->state != SMOL_VOICE_STATE_PLAYING)
+			continue;
+
+		float balances[2] = { 1.f };
+
+		balances[0] = -voice->balance[0];
+		balances[1] = +voice->balance[0];
+
+		balances[0] = fminf(balances[0] * balances[0], 1.f);
+		balances[1] = fminf(balances[1] * balances[1], 1.f);
+
+		balances[0] = balances[0] * 0.5f + 0.5f;
+		balances[1] = balances[1] * 0.5f + 0.5f;
+
+		for(int j = 0; j < num_output_samples; j++) {
+			for(int k = 0; k < num_output_channels; k++) {
+				float sample = voice->callback(&mixer->voices[i], k, sample_rate, inv_sample_rate, voice->user_data);
+				sample *= voice->gain * balances[k];
+				outputs[k][j] += sample;
+			}
+			voice->time_offset += inv_sample_rate * voice->time_scale;
+		}
+	}
+
+	if(mixer->post_mix_callback) {
+		mixer->post_mix_callback(num_input_channels, num_input_samples, inputs, num_output_channels, num_output_samples, outputs, sample_rate, inv_sample_rate, mixer->post_mix_user_data);
+	}
+}
+
+#define smol_audio_set_mixer_as_callback(mixer) smol_audio_set_callback(&smol_mixer_mix, (void*)mixer)
+
+
 
 #ifdef SMOL_PLATFORM_WEB
 unsigned char audio_context_stack[8192];
@@ -99,7 +270,7 @@ typedef struct smol_audio_callback_data_t {
 	int num_output_channels;
 	const float* input_channels[32];
 	float* output_channels[32];
-	void* user_data;
+
 } smol_audio_callback_data_t;
 
 typedef struct smol_audio_context_t {
@@ -111,7 +282,7 @@ typedef struct smol_audio_context_t {
 	int num_input_channels;
 	int num_output_channels;
 	smol_audio_callback_proc* callback;
-
+	void* callback_user_data;
 } smol_audio_context_t;
 
 smol_audio_context_t smol__audio_context;
@@ -127,7 +298,7 @@ EM_BOOL smol_audio_callback(
 	void* userData4
 ) {
 
-	smol_audio_callback_data_t* cb_data = (smol_audio_callback_data_t*)userData4;
+	smol_audio_callback_data_t* cb_data = smol__audio_context.callback_data;
 
 	if(!(cb_data && smol__audio_context.callback))
 		return EM_FALSE;
@@ -148,6 +319,7 @@ EM_BOOL smol_audio_callback(
 			cb_data->num_output_channels = outputs[0].numberOfChannels;
 		}
 	}
+	memset(outputs->data, 0, 128*sizeof(float)*outputs[0].numberOfChannels);
 
 	smol__audio_context.callback(
 		cb_data->num_input_channels, 
@@ -158,7 +330,7 @@ EM_BOOL smol_audio_callback(
 		cb_data->output_channels, 
 		cb_data->sample_rate,
 		cb_data->inv_sample_rate,
-		cb_data->user_data
+		smol__audio_context.callback_user_data
 	);
 
 
@@ -169,13 +341,11 @@ EM_BOOL smol_audio_callback(
 
 void audio_worklet_created(EMSCRIPTEN_WEBAUDIO_T audioContext, EM_BOOL success, void* userData3);
 
-void audio_thread_initialized(EMSCRIPTEN_WEBAUDIO_T context, EM_BOOL success, void *userData)
-{
+void audio_thread_initialized(EMSCRIPTEN_WEBAUDIO_T context, EM_BOOL success, void *userData) {
+
 	if (!success) return; // Check browser console in a debug build for detailed errors
 	{
 
-		
-		printf("Audio thread initialized.\n");
 
 		//smol_audio_context_t* context = (smol_audio_context*)userData;
 
@@ -204,17 +374,17 @@ void audio_worklet_created(EMSCRIPTEN_WEBAUDIO_T context, EM_BOOL success, void 
 
 		
 		smol__audio_context.callback_data = (smol_audio_callback_data_t*)malloc(sizeof(smol_audio_callback_data_t));
+		memset(smol__audio_context.callback_data, 0, sizeof(*smol__audio_context.callback_data));
 		smol__audio_context.callback_data->sample_rate = (double)smol__audio_context.sample_rate;
 		smol__audio_context.callback_data->inv_sample_rate = 1.0 / (double)smol__audio_context.sample_rate;
-
-		printf("Sample rate: %lf reciprocal: %lf\n", smol__audio_context.callback_data->sample_rate, smol__audio_context.callback_data->inv_sample_rate);
+	
 
 		EMSCRIPTEN_AUDIO_WORKLET_NODE_T worklet = emscripten_create_wasm_audio_worklet_node(
 			context, 
 			"smol_audio_worklet_processor", 
 			&options, 
 			smol_audio_callback, 
-			(void*)smol__audio_context.callback_data
+			NULL
 		);
 
 		smol__audio_context.worklet_node = worklet;
@@ -248,10 +418,6 @@ int smol_audio_init(int sample_rate, int num_channels) {
 
 }
 
-int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data) {
-	smol__audio_context.callback = callback;
-	smol__audio_context.callback_data->user_data = user_data;
-}
 
 int smol_audio_shutdown() {
 	EM_ASM({emscriptenGetAudioObject($0).disconnect()}, smol__audio_context.worklet_node);
@@ -375,7 +541,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 	}
 
 
-	REFERENCE_TIME requested_duration = 100*100000LL; 
+	REFERENCE_TIME requested_duration = 10*100000LL; 
 
 	hres = IAudioClient_IsFormatSupported(smol__audio_context.audio_client, AUDCLNT_SHAREMODE_SHARED, &result_format.Format, &final_format);
 	if(FAILED(hres)) {
@@ -484,7 +650,11 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 				USHORT id = EXTRACT_WAVEFORMATEX_ID(&smol__audio_context.wave_format_ext.SubFormat);
 				
 				if(id == WAVE_FORMAT_IEEE_FLOAT) {
-
+					for(int i = 0; i < samples_to_write; i++) {
+						for(int j = 0; j < num_channels; j++) {
+							channels[j][i] = 0.f;
+						}
+					}
 					smol__audio_context.callback(
 						0, 
 						0, 
@@ -515,7 +685,6 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 			processing = SUCCEEDED(IAudioClient_Start(smol__audio_context.audio_client));
 		}
 
-		//printf("Waiting audio be rendered...\n");
 		WaitForSingleObject(smol__audio_context.buffer_end, INFINITE);
 		continue;
 		
@@ -546,13 +715,16 @@ int smol_audio_shutdown() {
 	return 0;
 }
 
-int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data) {
-	smol__audio_context.callback = callback;
-	smol__audio_context.callback_user_data = user_data;
-}
 #endif 
 #undef COBJMACROS
 #endif
+
+
+int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data) {
+	smol__audio_context.callback = callback;
+	smol__audio_context.callback_user_data = user_data;
+	return 1;
+}
 
 #endif 
 #endif 
