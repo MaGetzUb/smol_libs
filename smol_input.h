@@ -58,7 +58,9 @@ int smol_key_up(smol_key key);
 //Returns: int -- containing 1, if key is being hold down, 0 if it isn't.
 int smol_key_down(smol_key key);
 
-
+//smol_chr() - Gets most recently typed character
+//Returns: unsigned int - containing utf32 codepoint
+unsigned int smol_chr(void);
 
 //smol_mouse_hit - Tests was mouse button pressed
 //Arguments: 
@@ -126,6 +128,7 @@ typedef enum {
 
 unsigned char smol__key_states[256];
 unsigned char smol__mouse_button_states[5];
+unsigned int smol__input_codepoint;
 int smol__mouse_x;
 int smol__mouse_y;
 int smol__mouse_z;
@@ -188,12 +191,19 @@ int smol_inputs_update(smol_frame_event_t* event) {
 			smol__mouse_move_z = event->mouse.dw;
 			return 1;
 		break;
+		case SMOL_FRAME_EVENT_TEXT_INPUT:
+			smol__input_codepoint = event->input.codepoint;
+			return 1;
+		break;
 		default: break;
 	}
 
 	return 0;
 }
 
+unsigned int smol_chr(void) {
+	return smol__input_codepoint;
+}
 
 int smol_key_hit(smol_key key) {
 	return smol__key_states[key] == SMOL_INPUT_STATE_HIT;
