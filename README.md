@@ -1,6 +1,7 @@
 # smol_libs
 
 My attempt of making single header C-libraries for *maximum portability. 
+
 _\* no apple platform support yet._
 
 So far I've made 
