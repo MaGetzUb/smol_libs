@@ -21,6 +21,9 @@ misrepresented as being the original software.
 distribution.
 */
 
+//TODO: some documentation and more maths stuff
+
+
 #ifndef SMOL_MATH_H
 #define SMOL_MATH_H
 
@@ -281,6 +284,7 @@ smol_m4_t smol_m4_ortho_lh(
 #endif 
 
 
+#ifdef SMOL_MATH_IMPLEMENTATION
 
 #pragma region smol_v2_t 
 SMOL_INLINE smol_v2_t smol_v2(float x, float y) {
@@ -1414,5 +1418,4 @@ SMOL_INLINE smol_m4_t smol_m4_perspective_lh(float fov, float aspect, float near
 #pragma endregion
 
 
-#ifdef SMOL_MATH_IMPLEMENTATION
 #endif
