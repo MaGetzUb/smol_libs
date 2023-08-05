@@ -25,7 +25,7 @@ int main() {
 	);
 
 	smol_image_t img = { 0 };
-	img = smol_load_image_qoi("gfx/test.qoi");
+	img = smol_load_image_qoi("res/gfx/test.qoi");
 
 	smol_frame_t* frame = smol_frame_create(512, 512, "Canvas test");
 	smol_canvas_t canvas = smol_canvas_create(512, 512);
