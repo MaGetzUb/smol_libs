@@ -587,14 +587,16 @@ const char* smol_get_current_directory(void) {
 	
 	static char buffer[512] = { 0 };
 	
-	{
 #ifdef UNICODE 
+	{
 		wchar_t buf[512];
 		GetCurrentDirectory(512, buf);
 		BOOL subst = FALSE;
-		WideCharToMultiByte(CP_UTF8, MB_COMPOSITE, buf, lstrlenW(buf), buffer, 1024, "?", &subst);
-#endif 
+		WideCharToMultiByte(CP_UTF8, 0, buf, lstrlenW(buf), buffer, 1024, "?", &subst);
 	}
+#else 
+	GetCurrentDirectory(512, buffer);
+#endif 
 	
 	return buffer;
 
