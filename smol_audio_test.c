@@ -225,6 +225,8 @@ int main() {
 
 	smol_canvas_t canvas;
 	canvas = smol_canvas_create(800, 600);
+	smol_canvas_set_font(&canvas, &font);
+
 	smol_frame_t* frame = smol_frame_create(800, 600, "audio?");
 
 	mixer.post_mix_user_data = NULL;
@@ -238,7 +240,7 @@ int main() {
 	
 	smol_audiobuffer_t buffer = smol_create_audiobuffer_from_wav_file(
 		//"test.wav"
-		"G:/Dev/FulcrumEngine/FFT-Test/CybermorphicSymphony.wav"
+		"G:/Dev/FulcrumEngine/FFT-Test/ignore/CybermorphicSymphony.wav"
 	);
 	smol_audiobuffer_t buffer2 = smol_create_audiobuffer_from_qoa_file("res/music/lorn_drawn_out_like_an_ache.qoa");
 
@@ -305,24 +307,22 @@ int main() {
 			if(smol_key_down(SMOLK_RIGHT)) offset += 10;
 			if(smol_key_down(SMOLK_LEFT)) offset -= 10;
 
-			char buf[128] = { 0 };
 			int num = smol_mixer_playing_voice_count(&mixer);
 			smol_canvas_set_color(&canvas, SMOLC_WHITE);
 			
-			smol_canvas_draw_text(&canvas, 10, 10, font, 1, "Click with mouse to play a synthesized sound.");
+			smol_canvas_draw_text(&canvas, 10, 10, 1, "Click with mouse to play a synthesized sound.");
 
-			sprintf(buf, "Voice count: %d", num);
-			smol_canvas_draw_text(&canvas, 10, 26, font, 1, buf);
+			smol_canvas_draw_text_formated(&canvas, 10, 26, 1, "Voice count: %d", num);
 
+			char buf[128] = { 0 };
 			for(int i = 63; i >= 0; i--)
 				buf[i] = "01"[(mixer.active_voices_mask >> i) & 1];
-			smol_canvas_draw_text(&canvas, 10, 42, font, 1, buf);
+			smol_canvas_draw_text(&canvas, 10, 42, 1, buf);
 
-			sprintf(buf, "Sampler: %s (Change with keys 1, 2, 3)", (const char* []) { "Nearest", "Linear", "Cubic Hermite" }[filter]);
-			smol_canvas_draw_text(&canvas, 10, 58, font, 1, buf);
+			smol_canvas_draw_text_formated(&canvas, 10, 58, 1, "Sampler: %s (Change with keys 1, 2, 3)", (const char* []) { "Nearest", "Linear", "Cubic Hermite" }[filter]);
 
-			sprintf(buf, "Playback samplerate: %lf", mixer.voices[voice].time_scale * 48000.);
-			smol_canvas_draw_text(&canvas, 10, 74, font, 1, buf);
+	
+			smol_canvas_draw_text_formated(&canvas, 10, 74, 1, "Playback samplerate: %lf", mixer.voices[voice].time_scale * 48000.);
 
 
 		}

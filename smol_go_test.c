@@ -33,14 +33,14 @@
 char board[BOARD_W * BOARD_H];
 
 
-int do_button(smol_canvas_t* canvas, smol_font_t* font, int x, int y, int w, int h, const char* txt) {
+int do_button(smol_canvas_t* canvas, int x, int y, int w, int h, const char* txt) {
 	
 	int highlight = 0;
 	int pressed = 0;
 	int released = 0;
 	
 	int tw, th;
-	smol_text_size(*font, 1, txt, &tw, &th);
+	smol_text_size(canvas, 1, txt, &tw, &th);
 	if(tw > w) w = tw+4;
 	if(th > h) h = th+4;
 
@@ -74,7 +74,6 @@ int do_button(smol_canvas_t* canvas, smol_font_t* font, int x, int y, int w, int
 		canvas, 
 		x + w/2 - tw/2 + pressed, 
 		y + h/2 - th/2 + pressed, 
-		*font, 
 		1, 
 		txt
 	);
@@ -125,6 +124,8 @@ int main() {
 		PXF_SMOL_FONT_16X16_HEIGHT, 
 		(smol_font_hor_geometry_t*)PXF_SMOL_FONT_16X16_OFFSET_X_WIDTH
 	);
+
+	smol_canvas_set_font(&canvas, &font);
 
 	int turn;
 	int victory_state;
@@ -247,8 +248,8 @@ int main() {
 			int tbw, tbh;
 			sprintf(txt, "Player: #%d", (1+turn));
 			smol_canvas_set_color(&canvas, SMOLC_GREY);
-			smol_text_size(font, 2, txt, &tbw, &tbh);
-			smol_canvas_draw_text(&canvas, 20, SCREEN_H - 50 - tbh/2, font, 2, txt);
+			smol_text_size(&canvas, 2, txt, &tbw, &tbh);
+			smol_canvas_draw_text(&canvas, 20, SCREEN_H - 50 - tbh/2, 2, txt);
 		}
 
 		if(victory_state && animation_finished) {
@@ -265,19 +266,19 @@ int main() {
 
 
 			int w = 0, h = 0;
-			smol_text_size(font, 2, str, &w, &h);
-			smol_canvas_draw_text(&canvas, 400 - w/2, 300 - h / 2, font, 2, str);
+			smol_text_size(&canvas, 2, str, &w, &h);
+			smol_canvas_draw_text(&canvas, 400 - w/2, 300 - h / 2, 2, str);
 
 			smol_canvas_darken_color(&canvas, 20);
 			
 			smol_canvas_set_color(&canvas, SMOLC_DARK_GREEN);
-			smol_text_size(font, 1, "New game", &w, &h);
-			if(do_button(&canvas, &font, 350 - w/2, 450 - 40, 50, 8, "New game"))
+			smol_text_size(&canvas, 1, "New game", &w, &h);
+			if(do_button(&canvas, 350 - w/2, 450 - 40, 50, 8, "New game"))
 				goto reset;
 			
 			smol_canvas_set_color(&canvas, SMOLC_DARK_RED);
-			smol_text_size(font, 1, "Exit game", &w, &h);
-			if(do_button(&canvas, &font, 450 - w/2, 450 - 40, 50, 8, "Exit game"))
+			smol_text_size(&canvas, 1, "Exit game", &w, &h);
+			if(do_button(&canvas, 450 - w/2, 450 - 40, 50, 8, "Exit game"))
 				running = 0;
 		}
 
