@@ -1,11 +1,12 @@
 # smol_libs
 
 My attempt of making single header C-libraries for *maximum portability. 
-* no apple platform support yet.
+
+_\* no apple platform support yet._
 
 So far I've made 
-* [smol_frame.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_frame.h) for creating simple windows for graphics programming. In the sample code I use [TSoding](https://github.com/tsoding/)'s [olive.c](https://github.com/tsoding/olive.c).
-* [smol_utils.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_utils.h) containing only one function `smol_timer()` to measure delta time in a frame. `smol_timer()` on windows returns the computer uptime, and on linux returns the seconds(microseconds included) since unix epoch. I was considering to use `clock_gettime()` instead of `gettimeofday()`, but `gettimeofday()` seem to require no additioncal compiler arguments. Some recently added features are utf8<->utf32 and utf16<->utf32 conversions, as well as filesystem scanning and entire file reading. 
+* [smol_frame.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_frame.h) for creating simple windows for graphics programming. In the sample code ([smol_frame_test.c](https://github.com/MaGetzUb/smol_libs/blob/master/smol_frame_test.c)) I use [TSoding](https://github.com/tsoding/)'s [olive.c](https://github.com/tsoding/olive.c).
+* [smol_utils.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_utils.h) containing function such as `smol_timer()` to measure delta time in a frame. `smol_timer()` on windows returns the computer uptime, and on linux returns the seconds(microseconds included) since unix epoch. I was considering to use `clock_gettime()` instead of `gettimeofday()`, but `gettimeofday()` seem to require no additioncal compiler arguments. Some recently added features are utf8<->utf32 and utf16<->utf32 conversions, as well as filesystem scanning and entire file reading. 
 * [smol_input.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_input.h) a complimentary header for input management, has functions for checking is key hit(=pressed), down (=being pressed) and up (=released) and for mouse buttons too. Also it contains functions for mouse location on a window, as well as wheel delta/orientation. These functions will change when multiple frames and shared event queues are properly implemented.
 * [smol_canvas.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_canvas.h) My own attempt for software rendering 2D shapes, lines, circles, images, and text triangles(not working yet).
 * [smol_math.h](https://github.com/MaGetzUb/smol_libs/blob/master/smol_math.h) A rudimentary linear algebra library, for vectors, quaternions and  matrices (only compatible with OpenGL atm).
