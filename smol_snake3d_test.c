@@ -362,14 +362,14 @@ int main(const int argc, const char* argv[]) {
 	smol_gl_set_vsync(SMOL_TRUE);
 	#endif 
 
-	smol_font_t font16px = smol_font_create(
+	smol_gl_font_t font16px = smol_gl_font_create(
 		&PXF_SMOL_FONT_16X16_DATA[0][0][0],
 		PXF_SMOL_FONT_16X16_WIDTH, 
 		PXF_SMOL_FONT_16X16_HEIGHT,
 		&PXF_SMOL_FONT_16X16_OFFSET_X_WIDTH[0][0]
 	);
 
-	smol_font_t font7x8px = smol_font_load_pxf("smol_7x8.pxf");
+	smol_gl_font_t font7x8px = smol_font_load_pxf("smol_7x8.pxf");
 
 
 	smol_text_renderer_t text_renderer = smol_text_renderer_create(&font16px, INDICES_PER_65K);
@@ -592,26 +592,26 @@ int main(const int argc, const char* argv[]) {
 #ifndef __EMSCRIPTEN__
 	glDebugMessageCallback(debug_message_callback, NULL);
 	GLuint snek_vertex_shader, snek_fragment_shader;
-	snek_vertex_shader = create_and_compile_shader_from_file("shaders/snek3d.vert", GL_VERTEX_SHADER);
-	snek_fragment_shader = create_and_compile_shader_from_file("shaders/snek3d.frag", GL_FRAGMENT_SHADER);
+	snek_vertex_shader = create_and_compile_shader_from_file("res/shaders/snek3d.vert", GL_VERTEX_SHADER);
+	snek_fragment_shader = create_and_compile_shader_from_file("res/shaders/snek3d.frag", GL_FRAGMENT_SHADER);
 
 	GLuint text_vertex_shader, text_fragment_shader;
-	text_vertex_shader = create_and_compile_shader_from_file("shaders/text.vert", GL_VERTEX_SHADER);
-	text_fragment_shader = create_and_compile_shader_from_file("shaders/text.frag", GL_FRAGMENT_SHADER);
+	text_vertex_shader = create_and_compile_shader_from_file("res/shaders/text.vert", GL_VERTEX_SHADER);
+	text_fragment_shader = create_and_compile_shader_from_file("res/shaders/text.frag", GL_FRAGMENT_SHADER);
 #else
 
 	GLuint snek_vertex_shader, snek_fragment_shader;
-	snek_vertex_shader = create_and_compile_shader_from_file("shaders/snek3d_oes.vert", GL_VERTEX_SHADER);
+	snek_vertex_shader = create_and_compile_shader_from_file("res/shaders/snek3d_oes.vert", GL_VERTEX_SHADER);
 	SMOL_ASSERT(snek_vertex_shader != GL_INVALID_INDEX);
 
-	snek_fragment_shader = create_and_compile_shader_from_file("shaders/snek3d_oes.frag", GL_FRAGMENT_SHADER);
+	snek_fragment_shader = create_and_compile_shader_from_file("res/shaders/snek3d_oes.frag", GL_FRAGMENT_SHADER);
 	SMOL_ASSERT(snek_fragment_shader != GL_INVALID_INDEX);
 
 	GLuint text_vertex_shader, text_fragment_shader;
-	text_vertex_shader = create_and_compile_shader_from_file("shaders/text_oes.vert", GL_VERTEX_SHADER);
+	text_vertex_shader = create_and_compile_shader_from_file("res/shaders/text_oes.vert", GL_VERTEX_SHADER);
 	SMOL_ASSERT(text_vertex_shader != GL_INVALID_INDEX);
 
-	text_fragment_shader = create_and_compile_shader_from_file("shaders/text_oes.frag", GL_FRAGMENT_SHADER);
+	text_fragment_shader = create_and_compile_shader_from_file("res/shaders/text_oes.frag", GL_FRAGMENT_SHADER);
 	SMOL_ASSERT(text_fragment_shader != GL_INVALID_INDEX);
 
 #endif 
