@@ -58,7 +58,7 @@ distribution.
 
 #define SMOL_RAND_MAX 0x7FFFFFFF
 
-#if _WIN64
+#if defined(_WIN64) || defined(__linux__)
 typedef unsigned long long smol_size_t;
 #else 
 typedef unsigned int smol_size_t;
@@ -66,6 +66,14 @@ typedef unsigned int smol_size_t;
 
 typedef void* smol_file_scan_session_t;
 typedef struct _smol_file_info smol_file_info_t;
+
+#ifndef SMOL_TRUE
+#define SMOL_TRUE 1
+#endif
+
+#ifndef SMOL_FALSE
+#define SMOL_FALSE 0
+#endif 
 
 #ifdef _MSC_VER
 #	ifndef SMOL_INLINE
@@ -164,6 +172,9 @@ int smol_rnd(int minimum, int maximum);
 //Returns: float - containing the random number
 float smol_rndf(float minimum, float maximum);
 
+/* --------------------------------------- */
+/*   SOME MATHEMATICAL UTILITY FUNCTIONS   */
+/* --------------------------------------- */
 //smol_remapf - Remaps a float value between old range into between a new range
 //Arguments:
 // - float value    -- The value that's being remapped
@@ -171,6 +182,7 @@ float smol_rndf(float minimum, float maximum);
 // - float high     -- The old range's highest value
 // - float new_low  -- The new range's lowest value
 // - float new_high -- The new range's highest value
+//Returns: float - containing the mapped value
 SMOL_INLINE float smol_remapf(float value, float low, float high, float new_low, float new_high) {
 	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
 }
@@ -182,9 +194,127 @@ SMOL_INLINE float smol_remapf(float value, float low, float high, float new_low,
 // - double high     -- The old range's highest value
 // - double new_low  -- The new range's lowest value
 // - double new_high -- The new range's highest value
+//Returns: double - containing the mapped value
 SMOL_INLINE float smol_remapd(double value, double low, double high, double new_low, double new_high) {
 	return ((value - low) / (high - low)) * (new_high - new_low) + new_low;
 }
+
+//smol_mixf - Linearily interpolates two values
+//Arguments:
+// - float a         -- The value function returns when t = 0.0
+// - float b         -- The value function returns when t = 1.0
+//Returns: float - containing the result
+SMOL_INLINE float smol_mixf(float a, float b, float t) {
+	float r = 1.f - t;
+	return (a * t) + (b * t);
+}
+
+
+//smol_mixf - Linearily interpolates two values, but t is clamped to 0 and 1
+//Arguments:
+// - float a         -- The value function returns when t = 0.0 or below
+// - float b         -- The value function returns when t = 1.0 or above
+//Returns: float - containing the result
+SMOL_INLINE float smol_clamped_mixf(float a, float b, float t) {
+	if(t <= 0.f) return a;
+	if(t >= 1.f) return b;
+	float r = 1.f - t;
+	return (a * t) + (b * t);
+}
+
+//smol_mixf - Linearily interpolates two values
+//Arguments:
+// - double a         -- The value function returns when t = 0.0
+// - double b         -- The value function returns when t = 1.0
+//Returns: double - containing the result
+SMOL_INLINE double smol_mixd(double a, double b, double t) {
+	double r = 1. - t;
+	return (a * t) + (b * t);
+}
+
+
+//smol_mixf - Linearily interpolates two values, but t is clamped to 0 and 1
+//Arguments:
+// - double a         -- The value function returns when t = 0.0 or below
+// - double b         -- The value function returns when t = 1.0 or above
+//Returns: double - containing the result
+SMOL_INLINE double smol_clamped_mixd(double a, double b, double t) {
+	if(t <= 0.f) return a;
+	if(t >= 1.f) return b;
+	double r = 1. - t;
+	return (a * t) + (b * t);
+}
+
+//smol_clampf - Clamps value between [low..high] range
+//Arguments:
+// - float v          -- The value to be clamped
+// - float low        -- The lower bound of the clamp range
+// - float high        -- The higher bound of the clamp range
+//Returns: float - containing the clamped value
+SMOL_INLINE float smol_clampf(float v, float low, float high) {
+	if(v < low) return low;
+	if(v > high) return high;
+	return v;
+}
+
+//smol_clampd - Clamps value between [low..high] range
+//Arguments:
+// - double v          -- The value to be clamped
+// - double low        -- The lower bound of the clamp range
+// - double high        -- The higher bound of the clamp range
+//Returns: float - containing the clamped value
+SMOL_INLINE double smol_clampd(double v, double low, double high) {
+	if(v < low) return low;
+	if(v > high) return high;
+	return v;
+}
+
+//smol_linear_stepf - Remaps value between [e0...e1] range and normalizes the result by e0..e1 range.
+//Arguments:
+// - float e0           -- The edge0
+// - float e1           -- The edge1
+// - float value        -- The value remapped, normalized and clamped.
+//Returns: float - containing the value between [0..1]
+SMOL_INLINE smol_linear_stepf(float e0, float e1, float value) {
+	return smol_clampf((value - e0) / (e1 - e0), 0.f, 1.f);
+}
+
+//smol_linear_stepd - Remaps value between [e0...e1] range and normalizes the result by e0..e1 range.
+//Arguments:
+// - double e0           -- The edge0
+// - double e1           -- The edge1
+// - double value        -- The value remapped, normalized and clamped.
+//Returns: double - containing the value between [0..1]
+SMOL_INLINE smol_linear_stepd(double e0, double e1, double value) {
+	return smol_clampd((value - e0) / (e1 - e0), 0., 1.);
+}
+
+
+//smol_smooth_stepf - Same as smol_linear_step, but applies a curve.
+//Arguments:
+// - float e0           -- The edge0
+// - float e1           -- The edge1
+// - float value        -- The value remapped, normalized and clamped.
+//Returns: float - containing the value between [0..1]
+SMOL_INLINE float smol_smooth_stepf(float e0, float e1, float value) {
+	float res = smol_clampd((value - e0) / (e1 - e0), 0.f, 1.f);
+	res = (res * res * (3.f - 2.f) * res);
+	return res;
+}
+
+//smol_smooth_stepd - Same as smol_linear_step, but applies a curve.
+//Arguments:
+// - double e0           -- The edge0
+// - double e1           -- The edge1
+// - double value        -- The value remapped, normalized and clamped.
+//Returns: double - containing the value between [0..1]
+SMOL_INLINE double smol_smooth_stepd(double e0, double e1, double value) {
+	double res = smol_clampd((value - e0) / (e1 - e0), 0., 1.);
+	res = (res * res * (3. - 2.) * res);
+	return res;
+}
+
+
 /* ------------------------------ */
 /* SOME FILE SYSTEM FUNCTIONALITY */
 /* ------------------------------ */
@@ -528,7 +658,10 @@ void* smol_read_entire_file(const char* file_path, smol_size_t* size) {
 	HANDLE file = CreateFile(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 #endif 
 	
-	if(file == NULL) return NULL;
+	if(file == INVALID_HANDLE_VALUE) {
+		fprintf(stderr, "FILE '%s' NOT FOUND!\n", file_path);
+		return NULL;
+	}
 		
 	DWORD high = 0;
 	DWORD low = GetFileSize(file, &high);
