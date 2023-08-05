@@ -194,9 +194,6 @@ typedef struct _smol_event_queue_t smol_event_queue_t;
 //Forward declare smol frame opengl context structure
 typedef struct _smol_gl_context_t smol_gl_context_t;
 
-//Forward declare frame initialization config structure
-typedef struct _smol_frame_config_t smol_frame_config_t;
-
 //Forward declaration for frame event 
 typedef struct _smol_frame_event_t smol_frame_event_t;
 
@@ -3658,7 +3655,7 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 }
 
 void smol_frame_update(smol_frame_t* frame) {
-	//Schedules the browser to do something else than just running the main loop.
+	//Schedules the browser to do something else than just render_thread_running the main loop.
 	emscripten_sleep(0);
 }
 
