@@ -9,23 +9,38 @@
 #include <GLES3/gl2ext.h>
 #include <GLES3/gl32.h>
 #else 
-#ifdef SMOL_GL_DEFENITION_HEADER
-#include SMOL_GL_DEFENITION_HEADER
+#	ifdef SMOL_GL_DEFENITION_HEADER
+#		include SMOL_GL_DEFENITION_HEADER
+#	else 
+#	error No SMOL_GL_DEFINITION_HEADER macro defined!
+#	endif 
 #endif 
+
+#ifndef SMOL_INLINE
+#	ifdef _MSC_VER
+#		define SMOL_INLINE __forceinline
+#	else 
+#		define SMOL_INLINE __atribute__((inline_always))
+#	endif 
 #endif 
 
 #ifndef smol_offset_of
-#define smol_offset_of(Type, Field) ((void*)&(((Type*)0)->Field))
+#	define smol_offset_of(Type, Field) ((void*)&(((Type*)0)->Field))
 #endif 
 
-typedef struct _smol_font_hor_geom_t smol_font_hor_geom_t;
-typedef struct _smol_font_t smol_font_t;
+#ifndef SMOL_MATH_H
+#error This header requires smol_math.h be included before it!
+#else
+
+
+typedef struct _smol_font_hor_geometry_t smol_font_hor_geometry_t;
+typedef struct _smol_gl_font_t smol_gl_font_t;
 typedef struct _smol_text_renderer_t smol_text_renderer_t;
 
-smol_font_t smol_font_create(const char* pixels, int char_w, int char_h, smol_font_hor_geom_t* horizontal_geometry);
-smol_font_t smol_font_load_pxf(const char* file_path);
+smol_gl_font_t smol_gl_font_create(const char* pixels, int char_w, int glyph_height, smol_font_hor_geometry_t* horizontal_geometry);
+smol_gl_font_t smol_font_load_pxf(const char* file_path);
 
-smol_text_renderer_t smol_text_renderer_create(const smol_font_t* font, int max_characters);
+smol_text_renderer_t smol_text_renderer_create(const smol_gl_font_t* font, int max_characters);
 void smol_text_renderer_set_texture_uniform_slot(smol_text_renderer_t* tr, GLuint uniform_location, GLuint texture_slot);
 void smol_text_renderer_set_font(smol_text_renderer_t* tr, const smol_font_t* font);
 void smol_text_renderer_begin(smol_text_renderer_t* tr);
@@ -36,18 +51,19 @@ void smol_text_renderer_draw(smol_text_renderer_t* tr);
 
 #ifdef SMOL_TEXT_RENDERER_IMPLEMENTATION
 
-typedef struct _smol_font_hor_geom_t { 
-	char offset, size; 
-} smol_font_hor_geom_t;
+#ifndef SMOL_CANVAS_H
+typedef struct _smol_font_hor_geometry_t { 
+	char offset_x;
+	char width;
+} smol_font_hor_geometry_t;
+#endif
 
-typedef struct _smol_font_t {
+typedef struct _smol_gl_font_t {
 	GLuint texture_id;
 	int atlas_w;
 	int atlas_h;
-	int char_w;
-	int char_h;
-	smol_font_hor_geom_t* sizes;
-} smol_font_t;
+	smol_font_t font_def;
+} smol_gl_font_t;
 
 typedef struct _smol_char_vertex_t {
 	smol_v2_t position;
@@ -65,20 +81,20 @@ typedef struct _smol_text_renderer_t {
 	GLuint texture_slot;
 	GLuint texture_uniform;
 	GLenum index_type;
-	const smol_font_t* font;
+	const smol_gl_font_t* font;
 } smol_text_renderer_t;
 
 
-smol_font_t smol_font_create(const char* pixels, int char_w, int char_h, smol_font_hor_geom_t* horizontal_geometry) {
+smol_gl_font_t smol_gl_font_create(const char* pixels, int glyph_width, int glyph_height, smol_font_hor_geometry_t* horizontal_geometry) {
 
 	GLuint* memory = (GLuint*)malloc(4*1024*1024);
-	smol_font_t font = { 0 };
-	font.char_w = char_w;
-	font.char_h = char_h;
+	smol_gl_font_t font = { 0 };
+	font.font_def.glyph_width = glyph_width;
+	font.font_def.glyph_height = glyph_height;
 	//16 characters per row and column
-	font.atlas_w = 16 * char_w;
-	font.atlas_h = 16 * char_h;
-	font.sizes = horizontal_geometry;
+	font.atlas_w = 16 * glyph_width;
+	font.atlas_h = 16 * glyph_height;
+	font.font_def.geometry = horizontal_geometry;
 
 	//We'll allocate bit more memory than we need
 	if(memory) {
@@ -87,14 +103,14 @@ smol_font_t smol_font_create(const char* pixels, int char_w, int char_h, smol_fo
 		for(int tx = 0; tx < 16; tx++)
 		{
 			int chr = tx + ty * 16;
-			for(int y = 0; y < char_w; y++) 
-			for(int x = 0; x < char_h; x++) {
+			for(int y = 0; y < glyph_width; y++) 
+			for(int x = 0; x < glyph_height; x++) {
 				int idx = 
-					(ty * char_w * font.atlas_w) +
-					(tx * char_w) + 
+					(ty * glyph_width * font.atlas_w) +
+					(tx * glyph_width) + 
 					(x + y * font.atlas_w)
 				;
-				memory[idx] = 0xFFFFFF | ((pixels[chr*font.char_w*font.char_h + x + y*font.char_h] > 0) * 0xFF000000);
+				memory[idx] = 0xFFFFFF | ((pixels[chr*font.font_def.glyph_width*font.font_def.glyph_height + x + y*font.font_def.glyph_height] > 0) * 0xFF000000);
 			}
 		}
 
@@ -119,7 +135,7 @@ smol_font_t smol_font_create(const char* pixels, int char_w, int char_h, smol_fo
 #endif 
 #define INDICES_PER_65K (65536 / INDICES_PER_QUAD)
 
-smol_text_renderer_t smol_text_renderer_create(const smol_font_t* font, int max_characters) {
+smol_text_renderer_t smol_text_renderer_create(const smol_gl_font_t* font, int max_characters) {
 
 	smol_text_renderer_t text_renderer = { 0 };
 
@@ -287,20 +303,20 @@ void smol_text_renderer_end(smol_text_renderer_t* tr) {
 
 void smol_text_renderer_add_char(smol_text_renderer_t* tr, smol_v2_t pos, char chr, float scale, GLuint color) {
 
-	smol_font_t* font = tr->font;
+	smol_gl_font_t* font = tr->font;
 
 	float hor_offset = 0;
-	float width = font->char_w;
-	float height = font->char_h;
+	float width = font->font_def.glyph_width;
+	float height = font->font_def.glyph_height;
 	
-	if(font->sizes) {
-		width = font->sizes[chr].size;
-		hor_offset = font->sizes[chr].offset;
+	if(font->font_def.geometry) {
+		width = font->font_def.geometry[chr].width;
+		hor_offset = font->font_def.geometry[chr].offset_x;
 	}
 
 
-	int x = ((chr & 0x0F) * font->char_w);
-	int y = (chr >> 4) * font->char_h;
+	int x = ((chr & 0x0F) * font->font_def.glyph_width);
+	int y = (chr >> 4) * font->font_def.glyph_height;
 
 	float inv_atlas_w = 1.f / (float)font->atlas_w;
 	float inv_atlas_h = 1.f / (float)font->atlas_h;
@@ -355,22 +371,22 @@ void smol_text_renderer_add_char(smol_text_renderer_t* tr, smol_v2_t pos, char c
 void smol_text_renderer_add_string(smol_text_renderer_t* tr, smol_v2_t pos, float scale, GLuint color, const char* fmt, ...) {
 
 	char buffer[2048];
-	smol_font_t* font = tr->font;
+	smol_gl_font_t* font = tr->font;
 	va_list args;
 	va_start(args, fmt);
 	int n_chars = vsnprintf(buffer, 2048, fmt, args);
 	va_end(args);
 
 	smol_v2_t cpos = pos;
-	float space = font->char_w;
+	float space = font->font_def.glyph_width;
 
-	if(font->sizes) {
+	if(font->font_def.geometry) {
 
-		space = font->sizes['_'].size;
+		space = font->font_def.geometry['_'].width;
 
 		for(int i = 0; i < n_chars; i++) {
-			float offset = font->sizes[buffer[i]].offset;
-			float size = font->sizes[buffer[i]].size;
+			float offset = font->font_def.geometry[buffer[i]].offset_x;
+			float size = font->font_def.geometry[buffer[i]].width;
 
 			switch(buffer[i]) {
 				case ' ':
@@ -379,7 +395,7 @@ void smol_text_renderer_add_string(smol_text_renderer_t* tr, smol_v2_t pos, floa
 				break;
 				case '\n':
 					cpos.x = pos.x;
-					cpos.y += scale * (float)font->char_h;
+					cpos.y += scale * (float)font->font_def.glyph_height;
 				break;
 				default:
 					smol_text_renderer_add_char(tr, cpos, buffer[i], scale, color);
@@ -395,15 +411,15 @@ void smol_text_renderer_add_string(smol_text_renderer_t* tr, smol_v2_t pos, floa
 			switch(buffer[i]) {
 				case ' ':
 				case '\t':
-					cpos.x += scale * (float)font->char_w*(buffer[i]=='\t'? 4 : 1);
+					cpos.x += scale * (float)font->font_def.glyph_width*(buffer[i]=='\t'? 4 : 1);
 				break;
 				case '\n':
 					cpos.x = pos.x;
-					cpos.y += scale * (float)font->char_h;
+					cpos.y += scale * (float)font->font_def.glyph_height;
 				break;
 				default:
 					smol_text_renderer_add_char(tr, cpos, buffer[i], scale, color);
-					cpos.x += scale * (float)font->char_w;
+					cpos.x += scale * (float)font->font_def.glyph_width;
 				break;
 			}
 		}
@@ -436,13 +452,13 @@ void smol_text_renderer_draw(smol_text_renderer_t* tr) {
 	glDisable(GL_BLEND);
 }
 
-smol_font_t smol_font_load_pxf(const char* file_path) {
+smol_gl_font_t smol_font_load_pxf(const char* file_path) {
 
 	char line[4096];
-	smol_font_t font = { 0 };
+	smol_gl_font_t font = { 0 };
 	FILE* file = fopen(file_path, "r");
 	int char_w;
-	int char_h;
+	int glyph_height;
 	int has_sizes = 0;
 	
 	unsigned int num_chars;
@@ -450,15 +466,15 @@ smol_font_t smol_font_load_pxf(const char* file_path) {
 	if(!file)
 		return font;
 
-	fscanf(file, "glyph_size: %d %d\n", &char_w, &char_h);
+	fscanf(file, "glyph_size: %d %d\n", &char_w, &glyph_height);
 	fscanf(file, "num_chars: %d\n", &num_chars);
 
 	
-	char* pix_buffer = malloc(256 * char_w * char_h);
+	char* pix_buffer = malloc(256 * char_w * glyph_height);
 	char* offsets[128] = {0};
 	char* indexes = malloc(num_chars);
 
-	smol_font_hor_geom_t* sizes = malloc(sizeof(smol_font_hor_geom_t) * 256);
+	smol_font_hor_geometry_t* sizes = malloc(sizeof(smol_font_hor_geometry_t) * 256);
 	
 
 	memset(indexes, 0, num_chars);
@@ -467,17 +483,17 @@ smol_font_t smol_font_load_pxf(const char* file_path) {
 	#define CHAR_PIX_AT(px, py) offsets[indexes[i]][(px) + (py)*char_w]
 
 
-	memset(pix_buffer, 0, num_chars * char_w * char_h);
+	memset(pix_buffer, 0, num_chars * char_w * glyph_height);
 
 
 	for(int i = 0; i < num_chars; i++) {
 		fscanf(file, "%c:\n", &indexes[i]);
-		offsets[indexes[i]] = &pix_buffer[i * font.char_w * font.char_h];
+		offsets[indexes[i]] = &pix_buffer[i * font.font_def.glyph_width * font.font_def.glyph_height];
 
-		for(int y = 0; y < font.char_h; y++) {
+		for(int y = 0; y < font.font_def.glyph_height; y++) {
 			fgets(line, 4096, file);
 			char* tok = line;
-			for(int x = 0; x < font.char_w; x++)
+			for(int x = 0; x < font.font_def.glyph_width; x++)
 			{
 				int val = 0;
 				tok = strtok(x == 0 ? tok : NULL, ", ");
@@ -494,8 +510,8 @@ smol_font_t smol_font_load_pxf(const char* file_path) {
 		int x;
 		int w;
 		if(fscanf(file, "%c: %d %d\n", &c, &x, &w)) {
-			sizes[c].offset = x;
-			sizes[c].size = w;
+			sizes[c].offset_x = x;
+			sizes[c].width = w;
 			has_sizes = 1;
 		} else {
 			break;
@@ -504,7 +520,7 @@ smol_font_t smol_font_load_pxf(const char* file_path) {
 
 	fclose(file);
 	
-	font = smol_font_create(pix_buffer, char_w, char_h, has_sizes ? sizes : NULL);
+	font = smol_gl_font_create(pix_buffer, char_w, glyph_height, has_sizes ? sizes : NULL);
 
 	if(pix_buffer) free(pix_buffer);
 	if(sizes) free(sizes);
@@ -512,7 +528,7 @@ smol_font_t smol_font_load_pxf(const char* file_path) {
 	return font;
 	
 }
-
+#endif 
 #endif 
 
 #endif 
