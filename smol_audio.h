@@ -51,6 +51,7 @@ TODO: Linux backend aswell as DirectSound fallback-backend for older hardware
 #		include <mmdeviceapi.h>
 #		include <audioclient.h>
 #		include <initguid.h>
+#		include <Functiondiscoverykeys_devpkey.h>
 #	else 
 #		define SMOL_AUDIOI_BACKEND_DSOUND
 #		define CINTERFACE
@@ -98,6 +99,9 @@ TODO: Linux backend aswell as DirectSound fallback-backend for older hardware
 
 #ifndef SMOL_FREE
 #define SMOL_FREE( ptr ) free(ptr)
+#endif 
+
+#ifndef SMOL_FREE_PTR
 #define SMOL_FREE_PTR free
 #endif 
 
@@ -146,6 +150,7 @@ typedef enum voice_state {
 
 typedef struct _smol_audiobuffer_t {
 	float* samples;
+	float peak;
 	int sample_rate;
 	int num_channels;
 	int num_frames;
@@ -190,7 +195,7 @@ typedef struct _smol_audio_dec_t {
 typedef struct _smol_wav_dec_t {
 	smol_audio_dec_t decoder;
 	smol_u8 bits_per_sample;
-	smol_u8 wave_format;
+	smol_u8 render_wave_format;
 } smol_wav_dec_t;
 
 typedef struct _smol_qoa_dec_t {
@@ -203,12 +208,17 @@ typedef struct _smol_qoa_dec_t {
 //for such things. 
 typedef struct _smol_mixer_t smol_mixer_t;
 typedef struct _smol_voice_t smol_voice_t;
-typedef float smol_voice_sample_gen_proc(smol_voice_t* voice, int channel, double sample_rate, double inv_sample_rate, void* user_data);
+typedef float smol_voice_sample_gen_proc(smol_mixer_t* mixer, int voice_handle, int channel, double sample_rate, double inv_sample_rate, void* user_data);
+
+typedef struct _smol_audio_device_t {
+	char name[128 - sizeof(void*)];
+	void* device_handle;
+} smol_audio_device_t;
 
 //Init, shutdown and set audio engine callbacks:
 int smol_audio_init(int sample_rate, int num_channels);
 int smol_audio_shutdown();
-int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data);
+int smol_audio_set_callback(smol_audio_callback_proc* render_callback, void* user_data);
 #define smol_audio_set_mixer_as_callback(mixer_ptr) smol_audio_set_callback(&smol_mixer_mix, (void*)mixer_ptr)
 
 //Audio buffer creation, deletion and sampling
@@ -217,7 +227,10 @@ void smol_audiobuffer_destroy(smol_audiobuffer_t* audiobuffer);
 float smol_audiobuffer_sample_nearest(smol_audiobuffer_t* buffer, int channel, double time_stamp_sec);
 float smol_audiobuffer_sample_linear(smol_audiobuffer_t* buffer, int channel, double time_stamp_sec);
 float smol_audiobuffer_sample_cubic(smol_audiobuffer_t* buffer, int channel, double time_stamp_sec);
-SMOL_INLINE int smol_audiobuffer_is_valid(smol_audiobuffer_t* audiobuffer) { return (audiobuffer->samples && audiobuffer->sample_rate && audiobuffer->num_channels && audiobuffer->num_channels); }
+
+SMOL_INLINE int smol_audiobuffer_is_valid(smol_audiobuffer_t* audiobuffer) { 
+	return (audiobuffer->samples && audiobuffer->sample_rate && audiobuffer->num_channels && audiobuffer->num_channels); 
+}
 
 //Audio buffer loading / saving (works only if SMOL_UTILS_H is present, due read entire file.
 #ifdef SMOL_UTILS_H
@@ -238,6 +251,28 @@ smol_u32 smol_wav_dec_decode_frames(smol_wav_dec_t* dec, float* output, smol_siz
 //WAV saver
 int smol_audiobuffer_save_wav(smol_audiobuffer_t* buffer, const char* file_path, smol_u16 bps);
 
+//Mixer functionality
+
+void smol_mixer_update(smol_mixer_t* mixer);
+int smol_mixer_playing_voice_count(smol_mixer_t* mixer);
+int smol_mixer_play_voice(smol_mixer_t* mixer, smol_voice_sample_gen_proc* render_callback, void* userdata, float gain, float balance[3]);
+
+void smol_mixer_pause_voice(smol_mixer_t* mixer, int handle);
+void smol_mixer_stop_voice(smol_mixer_t* mixer, int handle);
+void smol_mixer_resume_voice(smol_mixer_t* mixer, int handle);
+
+void smol_mixer_mix(
+	int num_input_channels,
+	int num_input_samples,
+	const float** inputs,
+	int num_output_channels,
+	int num_output_samples,
+	float** outputs,
+	double sample_rate,
+	double inv_sample_rate,
+	void* user_data
+);
+
 #ifdef SMOL_AUDIO_IMPLEMENTATION
 
 #pragma region Audio mixer stuff
@@ -248,7 +283,7 @@ typedef struct _smol_voice_t {
 	float gain;
 	float balance[3]; //XYZ
 	volatile voice_state state;
-	smol_voice_sample_gen_proc* callback;
+	smol_voice_sample_gen_proc* render_callback;
 	void* user_data;
 } smol_voice_t;
 
@@ -292,7 +327,7 @@ int smol_mixer_next_free_handle(smol_mixer_t* mixer) {
 	return smol_bsf(~mixer->active_voices_mask);
 }
 
-int smol_mixer_play_voice(smol_mixer_t* mixer, smol_voice_sample_gen_proc* callback, void* userdata, float gain, float balance[3]) {
+int smol_mixer_play_voice(smol_mixer_t* mixer, smol_voice_sample_gen_proc* render_callback, void* userdata, float gain, float balance[3]) {
 
 	if(mixer->active_voices_mask == 0xFFFFFFFFFFFFFFFFULL)
 		return -1;
@@ -307,7 +342,7 @@ int smol_mixer_play_voice(smol_mixer_t* mixer, smol_voice_sample_gen_proc* callb
 	voice->balance[1] = balance[1];
 	voice->balance[2] = balance[2];
 	voice->state = SMOL_VOICE_STATE_PLAYING;
-	voice->callback = callback;
+	voice->render_callback = render_callback;
 	voice->user_data = userdata;
 	mixer->active_voices_mask |= (1 << free_index);
 	mixer->num_active_voices++;
@@ -316,13 +351,22 @@ int smol_mixer_play_voice(smol_mixer_t* mixer, smol_voice_sample_gen_proc* callb
 }
 
 void smol_mixer_pause_voice(smol_mixer_t* mixer, int handle) {
-	mixer->voices[handle].state = SMOL_VOICE_STATE_PAUSED;
+#ifdef _WIN32
+	InterlockedExchange(&mixer->voices[handle].state, SMOL_VOICE_STATE_PAUSED);
+#endif 
 }
 
 void smol_mixer_stop_voice(smol_mixer_t* mixer, int handle) {
-	mixer->voices[handle].state = SMOL_VOICE_STATE_STOPPED;
+#ifdef _WIN32
+	InterlockedExchange(&mixer->voices[handle].state, SMOL_VOICE_STATE_STOPPED);
+#endif 
 }
 
+void smol_mixer_resume_voice(smol_mixer_t* mixer, int handle) {
+#ifdef _WIN32
+	InterlockedExchange(&mixer->voices[handle].state, SMOL_VOICE_STATE_PLAYING);
+#endif 
+}
 
 void smol_mixer_update(smol_mixer_t* mixer) {
 	int last_index = smol_bsr(mixer->active_voices_mask);
@@ -375,7 +419,8 @@ void smol_mixer_mix(
 
 		for(int j = 0; j < num_output_samples; j++) {
 			for(int k = 0; k < num_output_channels; k++) {
-				float sample = voice->callback(&mixer->voices[i], k, sample_rate, inv_sample_rate, voice->user_data);
+				float sample = 0.f;
+				if(voice->render_callback) sample = voice->render_callback(mixer, i, k, sample_rate, inv_sample_rate, voice->user_data);
 				sample *= voice->gain * balances[k];
 				outputs[k][j] += sample;
 			}
@@ -424,7 +469,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		} break;
 		case SAMPLE_TYPE_F32_LE:
 		case SAMPLE_TYPE_F32_BE:
-			if(is_big_endian != SAMPLE_TYPE_F32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_F32_BE)) {
 				for(int i = 0; i < num_samples; i++)  {
 					unsigned int raw_sample = ((unsigned int*)data)[i];
 
@@ -449,7 +494,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		case SAMPLE_TYPE_S16_LE:
 		case SAMPLE_TYPE_S16_BE: {
 			static const float inv_short_max = 1.f / 32768.f;
-			if(is_big_endian != SAMPLE_TYPE_S32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_S32_BE)) {
 				for(int i = 0; i < num_samples; i++) {
 					unsigned short raw_sample = ((unsigned short*)data)[i];
 
@@ -472,7 +517,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		case SAMPLE_TYPE_U16_LE:
 		case SAMPLE_TYPE_U16_BE: {
 			static const float inv_ushort_max = 1.f / 65536.f;
-			if(is_big_endian != SAMPLE_TYPE_S32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_S32_BE)) {
 				for(int i = 0; i < num_samples; i++) {
 					unsigned int raw_sample = ((unsigned int*)data)[i];
 
@@ -495,7 +540,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		case SAMPLE_TYPE_S24_LE:
 		case SAMPLE_TYPE_S24_BE: {
 			static const double inv_i24_max = 1. / 16777216.;
-			if(is_big_endian != SAMPLE_TYPE_S32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_S32_BE)) {
 				for(int i = 0; i < num_samples; i++) {
 					
 					int raw_sample = (
@@ -523,7 +568,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		case SAMPLE_TYPE_U24_LE:
 		case SAMPLE_TYPE_U24_BE: {
 			static const double inv_u24_max = 1. / 8388608.;
-			if(is_big_endian != SAMPLE_TYPE_S32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_S32_BE)) {
 				for(int i = 0; i < num_samples; i++) {
 					
 					unsigned int raw_sample = (
@@ -555,7 +600,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		case SAMPLE_TYPE_S32_LE:
 		case SAMPLE_TYPE_S32_BE: {
 			static const double inv_int_max = 1. / 2147483648.;
-			if(is_big_endian != SAMPLE_TYPE_S32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_S32_BE)) {
 				for(int i = 0; i < num_samples; i++) {
 					unsigned int raw_sample = ((unsigned int*)data)[i];
 
@@ -580,7 +625,7 @@ smol_audiobuffer_t smol_audiobuffer_create_from_interleaved_data(void* data, aud
 		case SAMPLE_TYPE_U32_LE:
 		case SAMPLE_TYPE_U32_BE: {
 			static const double inv_uint_max = 1.f / 4294967296.;
-			if(is_big_endian != SAMPLE_TYPE_S32_BE) {
+			if(is_big_endian != (sample_type == SAMPLE_TYPE_S32_BE)) {
 				for(int i = 0; i < num_samples; i++) {
 					unsigned int raw_sample = ((unsigned int*)data)[i];
 
@@ -751,7 +796,13 @@ static const int smol_qoa_dequant_table[16][8] = {
 };
 
 
-
+smol_size_t smol_audio_dec_skip(smol_audio_dec_t* dec, smol_size_t bytes) {
+	if((dec->data_offset + bytes) < dec->data_length) {
+		dec->data_offset += bytes;
+		return bytes;
+	}
+	return dec->data_length - dec->data_offset;
+}
 
 smol_u64 smol_audio_dec_peek_u64(smol_audio_dec_t* dec) {
 	smol_u64 value = *(smol_u64*)(dec->data + dec->data_offset);
@@ -1036,7 +1087,7 @@ smol_wav_dec_t smol_wav_dec_init(const smol_byte* data, smol_size_t size) {
 	//Skip these 8 bytes "fmt " and "WAV" chunk section size
 	smol_audio_dec_read_u64(dec);
 
-	wavdec.wave_format = smol_audio_dec_read_u16(dec);
+	wavdec.render_wave_format = smol_audio_dec_read_u16(dec);
 	dec->num_channels = smol_audio_dec_read_u16(dec);
 	dec->sample_rate = smol_audio_dec_read_u32(dec);
 	smol_audio_dec_read_u32(dec);
@@ -1070,7 +1121,7 @@ smol_u32 smol_wav_dec_decode_frames(smol_wav_dec_t* dec, float* output, smol_siz
 	smol_u32 samples_read = output_size;
 	if(samples_read > dec->decoder.num_frames * dec->decoder.num_channels)
 		samples_read = dec->decoder.num_frames * dec->decoder.num_channels;
-	switch(dec->wave_format) {
+	switch(dec->render_wave_format) {
 		case 1: //WAVE_FORMAT_PCM
 			switch(dec->bits_per_sample) {
 				case 8: {
@@ -1080,21 +1131,21 @@ smol_u32 smol_wav_dec_decode_frames(smol_wav_dec_t* dec, float* output, smol_siz
 					}
 				} break;
 				case 16: {
-					static const double inv_max_short = 1.f / (float)0x80000;
+					static const double inv_max_short = 1. / (double)0x8000;
 					for(smol_u32 i = 0; i < samples_read; i++) {
 						output[i] = (float)((double)((smol_i16)smol_audio_dec_read_u16(dec)) * inv_max_short);
 					}
 				} break;
 				case 24: {
-					static const double inv_max_24bit = 1.f / (float)0x800000;
+					static const double inv_max_24bit = 1. / (double)0x800000;
 					for(smol_u32 i = 0; i < samples_read; i++) {
-						smol_i32 upper_word = (smol_i32)((smol_i16)smol_audio_dec_read_u16(dec));
-						smol_u8  lower_byte = smol_audio_dec_read_u8(dec);
-						output[i] = (float)((double)(upper_word << 8 | lower_byte) * inv_max_24bit);
+						smol_u8 bytes[] = { smol_audio_dec_read_u8(dec), smol_audio_dec_read_u8(dec), smol_audio_dec_read_u8(dec), 0 };
+						smol_i32 sample = ((*((smol_i32*)bytes)<<8)>>8);
+						output[i] = (float)((double)(sample) * inv_max_24bit);
 					}
 				} break;
 				case 32: {
-					static const double inv_max_32bit = 1.f / (float)0x80000000;
+					static const double inv_max_32bit = 1. / (double)0x80000000;
 					for(smol_u32 i = 0; i < samples_read; i++) {
 						output[i] = (float)((double)((smol_i32)smol_audio_dec_read_u32(dec)) * inv_max_32bit);
 					}
@@ -1113,13 +1164,16 @@ smol_u32 smol_wav_dec_decode_frames(smol_wav_dec_t* dec, float* output, smol_siz
 #ifdef SMOL_UTILS_H
 smol_audiobuffer_t smol_create_audiobuffer_from_qoa_file(const char* filepath) {
 
+	smol_audiobuffer_t buffer = { 0 };
 	smol_size_t size;
 	const void* data = smol_read_entire_file(filepath, &size);
+
+	if(!data)
+		return buffer;
 
 	smol_audio_dec_t qoa_dec = smol_qoa_dec_init((const smol_byte*)data, size).decoder;
 	
 	
-	smol_audiobuffer_t buffer = { 0 };
 	{
 		buffer.num_frames = qoa_dec.num_frames;
 		buffer.num_channels = qoa_dec.num_channels;
@@ -1145,11 +1199,17 @@ smol_audiobuffer_t smol_create_audiobuffer_from_qoa_file(const char* filepath) {
 
 smol_audiobuffer_t smol_create_audiobuffer_from_wav_file(const char* filepath) {
 
+	smol_audiobuffer_t buffer = { 0 };
 	smol_size_t size;
 	const void* data = smol_read_entire_file(filepath, &size);
+
+	if(!data) {
+		fputs(stderr, "Can't create audiobuffer from wav file!");
+		return buffer;
+	}
+
 	smol_wav_dec_t wav_dec = smol_wav_dec_init(data, size);
 	smol_audio_dec_t* dec = &wav_dec.decoder;
-	smol_audiobuffer_t buffer = { 0 };
 	{
 		buffer.num_frames = dec->num_frames;
 		buffer.num_channels = dec->num_channels;
@@ -1177,7 +1237,14 @@ smol_audiobuffer_t smol_create_audiobuffer_from_wav_file(const char* filepath) {
 //TODO: This probably shouldn't use FILE* at all but all the stuff should be 
 //stored to a memory buffer which then users can themselves, write into a file.
 int smol_audiobuffer_save_wav(smol_audiobuffer_t* buffer, const char* file_path, smol_u16 bps) {
-	FILE* file = fopen(file_path, "w");
+	
+
+	FILE* file = NULL;
+#ifndef _CRT_SECURE_NO_WARNINGS
+	fopen_s(&file, file_path, "wb");
+#else 
+	file = fopen(file_path, "w");
+#endif 
 	
 	if(!file) return 0;
 	
@@ -1188,7 +1255,7 @@ int smol_audiobuffer_save_wav(smol_audiobuffer_t* buffer, const char* file_path,
 	smol_u16 sample_type = 1;
 
 	if(bps == 32) sample_type = 3;
-	smol_u32 sub_chunk_2_size = buffer->num_frames * buffer->sample_rate * block_align;
+	smol_u32 sub_chunk_2_size = buffer->num_frames * block_align;
 
 	fwrite((void*)"RIFF", 4, 1, file);
 	fwrite((void*)"\0\0\0\0", 4, 1, file);
@@ -1235,7 +1302,7 @@ int smol_audiobuffer_save_wav(smol_audiobuffer_t* buffer, const char* file_path,
 			for(smol_u32 i = 0; i < buffer->num_channels; i++)
 			{
 				smol_i16 sample = (double)buffer->samples[j * buffer->num_channels * buffer->stride + i * buffer->stride] * (double)0x7FFF;
-				fwrite((void*)&sample, 3, 1, file);
+				fwrite((void*)&sample, 2, 1, file);
 			}
 		case 24:
 			for(smol_u32 j = 0; j < buffer->num_frames; j++) 
@@ -1286,8 +1353,8 @@ typedef struct smol_audio_context_t {
 	int sample_rate;
 	int num_input_channels;
 	int num_output_channels;
-	smol_audio_callback_proc* callback;
-	void* callback_user_data;
+	smol_audio_callback_proc* render_callback;
+	void* render_callback_user_data;
 } smol_audio_context_t;
 
 smol_audio_context_t smol__audio_context;
@@ -1305,7 +1372,7 @@ EM_BOOL smol_audio_callback(
 
 	smol_audio_callback_data_t* cb_data = smol__audio_context.callback_data;
 
-	if(!(cb_data && smol__audio_context.callback))
+	if(!(cb_data && smol__audio_context.render_callback))
 		return EM_FALSE;
 
 
@@ -1326,7 +1393,7 @@ EM_BOOL smol_audio_callback(
 	}
 	memset(outputs->data, 0, 128*sizeof(float)*outputs[0].numberOfChannels);
 
-	smol__audio_context.callback(
+	smol__audio_context.render_callback(
 		cb_data->num_input_channels, 
 		128, 
 		cb_data->input_channels, 
@@ -1335,7 +1402,7 @@ EM_BOOL smol_audio_callback(
 		cb_data->output_channels, 
 		cb_data->sample_rate,
 		cb_data->inv_sample_rate,
-		smol__audio_context.callback_user_data
+		smol__audio_context.render_callback_user_data
 	);
 
 
@@ -1436,25 +1503,53 @@ typedef HRESULT smol_CoCreateInstance_proc(const IID* const rclsid, LPUNKNOWN pU
 typedef HRESULT smol_CoInitializeEx_proc(LPVOID pvReserved, DWORD  dwCoInit);
 typedef void __stdcall smol_CoTaskMemFree_proc(_Frees_ptr_opt_ LPVOID pv);
 
+HMODULE smol__Ole32_module;
 smol_CoInitializeEx_proc* smol_CoInitializEx;
 smol_CoCreateInstance_proc* smol_CoCreateInstance;
 smol_CoTaskMemFree_proc* smol_CoTaskMemFree;
 
-typedef struct smol_audio_context_t {
-	IMMDevice* audio_device;
-	IAudioClient* audio_client;
+typedef struct _smol_audio_context_t {
+	
+	smol_audio_device_t* audio_devices[2];
+	int audio_device_count[2];
+
+	IMMDevice* audio_render_device;
+	IAudioClient* audio_capture_client;
 	IAudioRenderClient* audio_renderer;
-	volatile UINT running;
-	HANDLE processing_ended;
-	HANDLE buffer_end;
-	HANDLE audio_thread;
+	
+	IMMDevice* audio_capture_device;
+	IAudioClient* audio_render_client;
+	IAudioCaptureClient* audio_capturer;
+
+	volatile UINT render_thread_running;
+	volatile UINT capture_thread_running;
+
+	HANDLE rendering_process_ended;
+	HANDLE capture_process_ended;
+
+	HANDLE render_buffer_end;
+	HANDLE render_thread;
+
 	union {
-		WAVEFORMATEXTENSIBLE wave_format_ext;
-		WAVEFORMATEX wave_format;
+		WAVEFORMATEXTENSIBLE render_wave_format_ext;
+		WAVEFORMATEX render_wave_format;
 	};
-	smol_audio_callback_proc* callback;
-	void* callback_user_data;
+
+	
+	union {
+		WAVEFORMATEXTENSIBLE capture_wave_format_ext;
+		WAVEFORMATEX capture_wave_format;
+	};
+
+
+	smol_audio_callback_proc* render_callback;
+	void* render_callback_user_data;
+
+	smol_audio_callback_proc* capture_callback;
+	void* capture_callback_user_data;
+
 } smol_audio_context_t;
+
 
 #define SMOL_SAFE_COM_RELEASE(comptr) \
 	if((comptr)) \
@@ -1465,22 +1560,141 @@ DEFINE_GUID(SMOL_CLSID_MMDeviceEnumerator, 0xBCDE0395, 0xE52F, 0x467C, 0x8E, 0x3
 DEFINE_GUID(SMOL_IID_IMMDeviceEnumerator,  0xA95664D2, 0x9614, 0x4F35, 0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6);
 DEFINE_GUID(SMOL_IID_IAudioClient,         0x1CB9AD4C, 0xDBFA, 0x4c32, 0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2);
 DEFINE_GUID(SMOL_IID_IAudioRenderClient,   0xF294ACFC, 0x3146, 0x4483, 0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2);
+DEFINE_GUID(SMOL_IID_IAudioCaptureClient,  0xC8ADBD64, 0xE71E, 0x48A0, 0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17);
+
 
 smol_audio_context_t smol__audio_context;
 
-DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter);
+DWORD WINAPI smol_audio_playback_thread_proc(LPVOID lpParameter);
+DWORD WINAPI smol_audio_capture_thread_proc(LPVOID lpParameter);
 
-int smol_audio_init(int sample_rate, int num_channels) {
 
-	HMODULE module = LoadLibrary(TEXT("Ole32.dll"));
+const char* smol_get_audio_device_name(IMMDevice* device) {
+	
+	static char buffer[128] = { 0 };
+
+	if(device == NULL)
+		goto failed;
+
+	HRESULT hres = S_OK;
+
+	LPWSTR id = NULL;
+	IPropertyStore* store = NULL;
+
+	hres = IMMDevice_OpenPropertyStore(device, STGM_READ, &store);
+
+	if(FAILED(hres))
+		goto failed;
+				
+	PROPVARIANT variant_device_name;
+	hres = IPropertyStore_GetValue(store, &PKEY_Device_FriendlyName, &variant_device_name);
+
+	if(SUCCEEDED(hres)) {
+		BOOL subst = FALSE;
+		int n = lstrlenW(variant_device_name.pwszVal);
+		WideCharToMultiByte(CP_UTF8, 0, variant_device_name.pwszVal, n, buffer, 128, "?", &subst);
+		buffer[n] = 0;
+	}
+
+	
+	SMOL_SAFE_COM_RELEASE(store);
+
+	return buffer;
+
+failed:
+
+	return NULL;
+
+}
+
+smol_audio_device_t* smol_enumerate_audio_devices(int is_capturer, int* device_count) {
+
+	if(!smol__Ole32_module) {
+		smol__Ole32_module = LoadLibrary(TEXT("Ole32.dll"));
+		smol_CoInitializEx = (smol_CoInitializeEx_proc*)GetProcAddress(smol__Ole32_module, "CoInitializeEx");
+		smol_CoCreateInstance = (smol_CoCreateInstance_proc*)GetProcAddress(smol__Ole32_module, "CoCreateInstance");
+		smol_CoTaskMemFree = (smol_CoTaskMemFree_proc*)GetProcAddress(smol__Ole32_module, "CoTaskMemFree");
+	}
+
+	HRESULT hres = smol_CoInitializEx(NULL, COINIT_MULTITHREADED);
+	IMMDeviceEnumerator* device_enumerator = NULL;
+	IMMDeviceCollection* collection = NULL;
+
+	if(FAILED(hres)) {
+		goto failed;
+	}
+
+	hres = smol_CoCreateInstance(
+		&SMOL_CLSID_MMDeviceEnumerator,
+		NULL,
+		CLSCTX_ALL,
+		&SMOL_IID_IMMDeviceEnumerator,
+		&device_enumerator
+	);
+
+	if(FAILED(hres)) {
+		fprintf(stderr, "COM error: Failed to create audio device enumerator!\n");
+		goto failed;
+	}
+
+	hres = IMMDeviceEnumerator_EnumAudioEndpoints(device_enumerator, is_capturer ? eCapture : eRender, DEVICE_STATE_ACTIVE, &collection);
+	if(FAILED(hres)){
+		fprintf(stderr, "COM error: Failed to enumerate audio enpoints!\n");
+		goto failed;
+	}
+
+	UINT num_devices = 0;
+	hres = IMMDeviceCollection_GetCount(collection, &num_devices);
+	if(FAILED(hres)) {
+		fprintf(stderr, "COM error: Failed acquire device count!\n");
+		goto failed;
+	}
+	
+	smol__audio_context.audio_devices[is_capturer] = (smol_audio_device_t*)malloc(sizeof(smol_audio_device_t) * num_devices);
+	memset((void*)smol__audio_context.audio_devices[is_capturer], 0, sizeof(smol_audio_device_t)*num_devices);
+	
+	for(UINT i = 0; i < num_devices; i++) {
+		IMMDevice* device = NULL;
+		hres = IMMDeviceCollection_Item(collection, i, &device);
+		if(FAILED(hres))
+			continue;
+
+		const char* name = NULL;
+		if((name = smol_get_audio_device_name(device)) != NULL) {
+			int index = smol__audio_context.audio_device_count[is_capturer]++;
+			memcpy((void*)smol__audio_context.audio_devices[is_capturer][index].name, (const void*)name, 128-sizeof(void*));
+			
+		}
+
+		SMOL_SAFE_COM_RELEASE(device);
+	}
+
+	int count = smol__audio_context.audio_device_count[is_capturer];
+	smol__audio_context.audio_devices[is_capturer] = realloc(smol__audio_context.audio_devices[is_capturer], count *  sizeof(smol_audio_device_t));
+
+	*device_count = count;
+
+	return smol__audio_context.audio_devices[is_capturer];
+failed:
+	SMOL_SAFE_COM_RELEASE(collection);
+	SMOL_SAFE_COM_RELEASE(device_enumerator);
+	return NULL;
+}
+
+
+
+int smol_audio_init(int sample_rate, int num_channels, int device) {
+
+	if(!smol__Ole32_module) {
+		smol__Ole32_module = LoadLibrary(TEXT("Ole32.dll"));
+		smol_CoInitializEx = (smol_CoInitializeEx_proc*)GetProcAddress(smol__Ole32_module, "CoInitializeEx");
+		smol_CoCreateInstance = (smol_CoCreateInstance_proc*)GetProcAddress(smol__Ole32_module, "CoCreateInstance");
+		smol_CoTaskMemFree = (smol_CoTaskMemFree_proc*)GetProcAddress(smol__Ole32_module, "CoTaskMemFree");
+	}
 
 	WAVEFORMATEXTENSIBLE result_format = { 0 };
-	WAVEFORMATEX* wave_format = NULL;
+	WAVEFORMATEX* render_wave_format = NULL;
 	WAVEFORMATEX* final_format = NULL;
-
-	smol_CoInitializEx = (smol_CoInitializeEx_proc*)GetProcAddress(module, "CoInitializeEx");
-	smol_CoCreateInstance = (smol_CoCreateInstance_proc*)GetProcAddress(module, "CoCreateInstance");
-	smol_CoTaskMemFree = (smol_CoTaskMemFree_proc*)GetProcAddress(module, "CoTaskMemFree");
 
 	HRESULT hres = smol_CoInitializEx(NULL, COINIT_MULTITHREADED);
 
@@ -1499,9 +1713,18 @@ int smol_audio_init(int sample_rate, int num_channels) {
 	}
 
 
-	smol__audio_context.audio_device = NULL;
-	hres = IMMDeviceEnumerator_GetDefaultAudioEndpoint(enumerator, eRender, eConsole, &smol__audio_context.audio_device);
+	smol__audio_context.audio_render_device = NULL;
 	
+	if(device < 0) {
+		hres = IMMDeviceEnumerator_GetDefaultAudioEndpoint(enumerator, eRender, eConsole, &smol__audio_context.audio_render_device);
+	}
+	else {
+		int count = 0;
+		if(!smol__audio_context.audio_devices[0]) {
+			smol_enumerate_audio_devices(0, &count);
+		}
+		smol__audio_context.audio_render_device = (IMMDevice*)smol__audio_context.audio_devices[0][device].device_handle;
+	}
 
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to Get default audio endpoint!");
@@ -1514,20 +1737,20 @@ int smol_audio_init(int sample_rate, int num_channels) {
 		goto failure;
 	}
 
-	hres = IMMDevice_Activate(smol__audio_context.audio_device, &SMOL_IID_IAudioClient, CLSCTX_ALL, NULL, &smol__audio_context.audio_client);
+	hres = IMMDevice_Activate(smol__audio_context.audio_render_device, &SMOL_IID_IAudioClient, CLSCTX_ALL, NULL, &smol__audio_context.audio_render_client);
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to activate audio device!");
 		goto failure;
 	}
 
-	hres = IAudioClient_GetMixFormat(smol__audio_context.audio_client, &wave_format);
+	hres = IAudioClient_GetMixFormat(smol__audio_context.audio_render_client, &render_wave_format);
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to get audio renderer mix format!");
 	}
 
 	/*TODO: stuff?*/
-	if(wave_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-			WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)wave_format;
+	if(render_wave_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+			WAVEFORMATEXTENSIBLE* ext = (WAVEFORMATEXTENSIBLE*)render_wave_format;
 
 			USHORT id = EXTRACT_WAVEFORMATEX_ID(&ext->SubFormat);
 				
@@ -1542,25 +1765,25 @@ int smol_audio_init(int sample_rate, int num_channels) {
 			result_format = *ext;
 	}	
 	else {
-		result_format.Format = *wave_format;
+		result_format.Format = *render_wave_format;
 	}
 
 
 	REFERENCE_TIME requested_duration = 10*100000LL; 
 
-	hres = IAudioClient_IsFormatSupported(smol__audio_context.audio_client, AUDCLNT_SHAREMODE_SHARED, &result_format.Format, &final_format);
+	hres = IAudioClient_IsFormatSupported(smol__audio_context.audio_render_client, AUDCLNT_SHAREMODE_SHARED, &result_format.Format, &final_format);
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED in testing format support!");
 		goto failure;
 	}
-	hres = IAudioClient_Initialize(smol__audio_context.audio_client, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, requested_duration, 0, &result_format, NULL);
+	hres = IAudioClient_Initialize(smol__audio_context.audio_render_client, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, requested_duration, 0, &result_format, NULL);
 
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to initialize audio renderer!");
 		goto failure;
 	}
 
-	hres = IAudioClient_GetService(smol__audio_context.audio_client, &SMOL_IID_IAudioRenderClient, &smol__audio_context.audio_renderer);
+	hres = IAudioClient_GetService(smol__audio_context.audio_render_client, &SMOL_IID_IAudioRenderClient, &smol__audio_context.audio_renderer);
 	
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to acquire audio renderer client!");
@@ -1570,64 +1793,66 @@ int smol_audio_init(int sample_rate, int num_channels) {
 	
 	if(final_format) {
 		if(final_format->wFormatTag == WAVE_FORMAT_EXTENSIBLE)
-			smol__audio_context.wave_format_ext = *(WAVEFORMATEXTENSIBLE*)final_format;
+			smol__audio_context.render_wave_format_ext = *(WAVEFORMATEXTENSIBLE*)final_format;
 		else
-			smol__audio_context.wave_format = *final_format;
+			smol__audio_context.render_wave_format = *final_format;
 		
 	} else {
 		if(result_format.Format.wFormatTag == WAVE_FORMAT_EXTENSIBLE)
-			smol__audio_context.wave_format_ext = result_format;
+			smol__audio_context.render_wave_format_ext = result_format;
 		else 
-			smol__audio_context.wave_format = result_format.Format;
+			smol__audio_context.render_wave_format = result_format.Format;
 	}	
 
-	if(wave_format) smol_CoTaskMemFree((LPVOID)wave_format), wave_format = NULL;
+	if(render_wave_format) smol_CoTaskMemFree((LPVOID)render_wave_format), render_wave_format = NULL;
 
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to start audio renderer!");
 		goto failure;
 	}
 
-	smol__audio_context.buffer_end = CreateEvent(0, FALSE, FALSE, NULL);
-	smol__audio_context.processing_ended = CreateEvent(0, FALSE, FALSE, NULL);
+	smol__audio_context.render_buffer_end = CreateEvent(0, FALSE, FALSE, NULL);
+	smol__audio_context.rendering_process_ended = CreateEvent(0, FALSE, FALSE, NULL);
 
-	hres = IAudioClient_SetEventHandle(smol__audio_context.audio_client, smol__audio_context.buffer_end);
+	hres = IAudioClient_SetEventHandle(smol__audio_context.audio_render_client, smol__audio_context.render_buffer_end);
 	if(FAILED(hres)) {
 		fprintf(stderr, "FAILED to set event handle for audio client!");
 		goto failure;
 	}
 
-	smol__audio_context.audio_thread = CreateThread(NULL, 8192, &smol_audio_thread_proc, NULL, 0, NULL);
+	smol__audio_context.render_thread = CreateThread(NULL, 8192, &smol_audio_playback_thread_proc, NULL, 0, NULL);
 	return 1;
 
 failure:
 
-	if(wave_format) smol_CoTaskMemFree((LPVOID)wave_format);
+	if(render_wave_format) smol_CoTaskMemFree((LPVOID)render_wave_format);
 
 	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_renderer);
-	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_client);
-	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_device);
+	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_render_client);
+	SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_render_device);
 	SMOL_SAFE_COM_RELEASE(enumerator);
 	return 0;
 
 }
 
-DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
+#define smol_audio_init(sample_rate, num_channels) smol_audio_init(sample_rate, num_channels, -1)
+
+DWORD WINAPI smol_audio_playback_thread_proc(LPVOID lpParameter) {
 	
 	HRESULT result = S_OK;
-	int processing = SUCCEEDED(IAudioClient_Start(smol__audio_context.audio_client));
+	int processing = SUCCEEDED(IAudioClient_Start(smol__audio_context.audio_render_client));
 
 	UINT32 buffer_padding = 0;
 	BYTE* buffer_data = NULL;
 	UINT32 buffer_frame_size = 0;
-	result = IAudioClient_GetBufferSize(smol__audio_context.audio_client, &buffer_frame_size);
+	result = IAudioClient_GetBufferSize(smol__audio_context.audio_render_client, &buffer_frame_size);
 
 	float* mix_buffer = (float*)_aligned_malloc(buffer_frame_size*sizeof(float), 16);
 	memset(mix_buffer, 0, buffer_frame_size*sizeof(float));
 	float* channels[32];
 
-	WORD num_channels = smol__audio_context.wave_format.nChannels;
-	double sample_rate = smol__audio_context.wave_format.nSamplesPerSec;
+	WORD num_channels = smol__audio_context.render_wave_format.nChannels;
+	double sample_rate = smol__audio_context.render_wave_format.nSamplesPerSec;
 	double inv_sample_rate = 1.0 / sample_rate;
 
 	UINT chunk_size = buffer_frame_size / num_channels;
@@ -1636,9 +1861,9 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 	}
 
 
-	while(WaitForSingleObject(smol__audio_context.processing_ended, 0) != WAIT_OBJECT_0) {
+	while(WaitForSingleObject(smol__audio_context.rendering_process_ended, 0) != WAIT_OBJECT_0) {
 
-		result = IAudioClient_GetCurrentPadding(smol__audio_context.audio_client, &buffer_padding);
+		result = IAudioClient_GetCurrentPadding(smol__audio_context.audio_render_client, &buffer_padding);
 		if(FAILED(result))
 			goto reset;
 		
@@ -1651,8 +1876,8 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 		if(buffer_data) {
 
 
-			if(smol__audio_context.wave_format.wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
-				USHORT id = EXTRACT_WAVEFORMATEX_ID(&smol__audio_context.wave_format_ext.SubFormat);
+			if(smol__audio_context.render_wave_format.wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+				USHORT id = EXTRACT_WAVEFORMATEX_ID(&smol__audio_context.render_wave_format_ext.SubFormat);
 				
 				if(id == WAVE_FORMAT_IEEE_FLOAT) {
 					for(int i = 0; i < samples_to_write; i++) {
@@ -1660,7 +1885,7 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 							channels[j][i] = 0.f;
 						}
 					}
-					smol__audio_context.callback(
+					smol__audio_context.render_callback(
 						0, 
 						0, 
 						NULL, 
@@ -1669,7 +1894,7 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 						channels, 
 						sample_rate, 
 						inv_sample_rate, 
-						smol__audio_context.callback_user_data
+						smol__audio_context.render_callback_user_data
 					);
 
 					for(int i = 0; i < samples_to_write; i++) {
@@ -1687,10 +1912,10 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 		reset:
 
 		if(SUCCEEDED(result) && !processing) {
-			processing = SUCCEEDED(IAudioClient_Start(smol__audio_context.audio_client));
+			processing = SUCCEEDED(IAudioClient_Start(smol__audio_context.audio_render_client));
 		}
 
-		WaitForSingleObject(smol__audio_context.buffer_end, INFINITE);
+		WaitForSingleObject(smol__audio_context.render_buffer_end, INFINITE);
 		continue;
 		
 		/* Recovery here */
@@ -1698,7 +1923,7 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 
 	}
 
-	WaitForSingleObject(smol__audio_context.buffer_end, INFINITE);
+	WaitForSingleObject(smol__audio_context.render_buffer_end, INFINITE);
 	_aligned_free(mix_buffer);
 
 	return 0;
@@ -1707,12 +1932,12 @@ DWORD WINAPI smol_audio_thread_proc(LPVOID lpParameter) {
 int smol_audio_shutdown() {
 
 
-	SetEvent(smol__audio_context.processing_ended);
-	if(WaitForSingleObject(smol__audio_context.audio_thread, INFINITE) == WAIT_OBJECT_0) {
+	SetEvent(smol__audio_context.rendering_process_ended);
+	if(WaitForSingleObject(smol__audio_context.render_thread, INFINITE) == WAIT_OBJECT_0) {
 
 		SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_renderer);
-		SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_client);
-		SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_device);
+		SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_render_client);
+		SMOL_SAFE_COM_RELEASE(smol__audio_context.audio_render_device);
 
 		return 1;
 	}
@@ -1728,12 +1953,12 @@ int smol_audio_shutdown() {
 
 typedef struct smol_audio_context_t {
     snd_pcm_t *alsa_handle;
-	pthread_t audio_thread;
+	pthread_t render_thread;
 	int num_channels;
 	int sample_rate;
 	volatile int thread_running;
-	volatile smol_audio_callback_proc* callback;
-	volatile void* callback_user_data;
+	volatile smol_audio_callback_proc* render_callback;
+	volatile void* render_callback_user_data;
 } smol_audio_context_t;
 
 smol_audio_context_t smol__audio_context = { 0 };
@@ -1780,7 +2005,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 	smol__audio_context.sample_rate = sample_rate;
 	smol__audio_context.num_channels = num_channels;
 
-	pthread_create(&smol__audio_context.audio_thread, NULL, &smol_audio_thread_callback, NULL);
+	pthread_create(&smol__audio_context.render_thread, NULL, &smol_audio_thread_callback, NULL);
 
 	return 1;
 }
@@ -1788,7 +2013,7 @@ int smol_audio_init(int sample_rate, int num_channels) {
 int smol_audio_shutdown() {
 	void* ret;
 	smol__audio_context.thread_running = 0;
-	pthread_join(smol__audio_context.audio_thread, &ret);
+	pthread_join(smol__audio_context.render_thread, &ret);
 }
 
 void* smol_audio_thread_callback(void* data) {
@@ -1816,7 +2041,7 @@ void* smol_audio_thread_callback(void* data) {
 
 	snd_pcm_prepare(pcm_handle);
 	while(smol__audio_context.thread_running) {
-		if(!smol__audio_context.callback) {
+		if(!smol__audio_context.render_callback) {
 			usleep(500000);
 			continue;
 		}
@@ -1828,7 +2053,7 @@ void* smol_audio_thread_callback(void* data) {
 					channels[j][i] = 0.f;
 				}
 			}
-			smol__audio_context.callback(
+			smol__audio_context.render_callback(
 				0, 
 				0, 
 				NULL, 
@@ -1837,7 +2062,7 @@ void* smol_audio_thread_callback(void* data) {
 				channels, 
 				sample_rate, 
 				inv_sample_rate, 
-				smol__audio_context.callback_user_data
+				smol__audio_context.render_callback_user_data
 			);
 
 			for(int i = 0; i < avail_frames; i++) {
@@ -1861,9 +2086,9 @@ void* smol_audio_thread_callback(void* data) {
 
 #endif 
 
-int smol_audio_set_callback(smol_audio_callback_proc* callback, void* user_data) {
-	smol__audio_context.callback = callback;
-	smol__audio_context.callback_user_data = user_data;
+int smol_audio_set_callback(smol_audio_callback_proc* render_callback, void* user_data) {
+	smol__audio_context.render_callback = render_callback;
+	smol__audio_context.render_callback_user_data = user_data;
 	return 1;
 }
 
