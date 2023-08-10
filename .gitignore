@@ -1,6 +1,7 @@
 visualstudio/
 .vscode/
 build/
+out/
 *.pdb
 *.obj
 *.ilk

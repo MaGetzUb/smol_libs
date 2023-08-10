@@ -25,6 +25,7 @@ distribution.
 #define SMOL_CANVAS_H
 
 #include <string.h>
+#include <stdarg.h>
 
 #ifdef _MSC_VER
 #	ifndef SMOL_INLINE
