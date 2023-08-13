@@ -314,6 +314,135 @@ SMOL_INLINE double smol_smooth_stepd(double e0, double e1, double value) {
 	return res;
 }
 
+/* --------------------------------------- */
+/*  Dynamic Array (std::vector) like stuff */
+/* --------------------------------------- */
+
+//This macro can be used to define a vector type, or declare a local variable: smol_vector(int) int_vec;
+#define smol_vector(type) \
+struct { \
+	int allocation;\
+	int count; \
+	type* data; \
+}
+
+//smol_vector_init - 
+#define smol_vector_init(vec, init_alloc) { \
+	(vec)->allocation = init_alloc; \
+	(vec)->count = 0; \
+	(vec)->data = SMOL_ALLOC(sizeof(*((vec)->data))*init_alloc); \
+} (void)0
+
+//smol_vector_push - Pushes an object into a vector
+//Arguments:
+// - vec -- The vector to be appended 
+// - value -- The element to be added
+#define smol_vector_push(vec, value) { \
+	if((vec)->count >= (vec)->allocation) \
+		(vec)->allocation *= 2; \
+		(vec)->data = SMOL_REALLOC((vec)->data, sizeof(*((vec)->data)) * (vec)->allocation ); \
+	(vec)->data[(vec)->count++] = value; \
+} (void)0
+
+//smol_vector_iterate - Iterates over vector elements
+//Arguments: 
+// - vec - The vector to be iterated over
+// - it - Variable name for the iterator
+//Returns: type* - Containing the buffer pointer to be indexed in
+#define smol_vector_iterate(vec, it) \
+	(vec)->data; \
+	for(int it = 0; it < (vec)->count; it++)
+
+//smol_vector_clear - Clears the vector
+//Arguments: 
+// - vec -- The vector to be cleared
+#define smol_vector_clear(vec) \
+	(vec)->count = 0
+
+//smol_vector_remove - Removes an element from the vector, by overwriting it with the last element, and decreasing vector size
+//Arguments: 
+// - vec -- The vector to remove element from
+// - element - The element index to be removed
+#define smol_vector_remove(vec, element) { \
+	(vec)->data[element] = (vec)->data[--(vec)->count]; \
+} (void)0
+
+//smol_vector_count - "Returns" the number of elements in the vector
+//Arguments:
+// - vec -- The vector you want count of
+//Returns int - containing the number of elements in the vector
+#define smol_vector_count(vec) \
+	(vec)->count
+
+//smol_vector_data - "Returns" the data buffer of the vector
+// - vector -- The span you want the data of
+//Returns type* - containing the pointer to the vector data
+#define smol_vector_data(vec) \
+	(vec)->data
+
+//smol_span_at - "Returns" an element of the vector. NOT BOUNDS CHECKED.
+// - vec -- The vector you want the element of
+// - index -- The index of the element
+//Returns type - containing the element at index
+#define smol_vector_at(vec, index) \
+	(vec)->data[index]
+
+//Frees a vector, and sets it's allocation and count to zero
+#define smol_vector_free(vec) { \
+	free((void*)(vec)); \
+	(vec)->count = 0; \
+	(vec)->allocation = 0; \
+} (void)0
+
+//smol_vector_allocation - Retrieves vector allocation
+//Arguments:
+// - vec -- The vector you want alocation of
+//Returns: int - containing the number of elements allocated in the vector.
+#define smol_vector_allocation(vec) \
+	(vec)->allocation
+
+/* --------------- */
+/* Span like stuff */
+/* --------------- */
+
+//This macro can be used to define a span type, or for local variable similarily as smol_vector() macro works.
+#define smol_span(type) \
+struct { \
+	int count; \
+	type* data; \
+}
+
+//smol_span_init_from_slice - Initializes span from "span_like" object (vector for example)
+//Arguments:
+// - span -- The span you're initializing
+// - span_like -- The data youre basing this span on
+// - first_element -- Index of the first element
+// - element_count -- Number of elements this span should contain
+#define smol_span_init_from_slice(span, span_like, first_element, element_count) { \
+	(span)->count = (element_count); \
+	(span)->data = &(span_like)->data[first_element]; \
+} (void)0
+
+//smol_span_count - "Returns" the number of elements in the span
+//Arguments:
+// - span -- The span you want count of
+//Returns int - containing the number of elements in the span
+#define smol_span_count(span_like) \
+	(span)->count
+
+
+//smol_span_data - "Returns" the data buffer of the span
+// - span -- The span you want the data of
+//Returns type* - containing the pointer to the span data
+#define smol_span_data(span_like) \
+	(span)->data
+
+//smol_span_at - "Returns" an element of the span. NOT BOUNDS CHECKED.
+// - span -- The span you want the element of
+// - index -- The index of the element
+//Returns type - containing the element at index
+#define smol_span_at(span_like, index) \
+	(span)->data[index]
 
 /* ------------------------------ */
 /* SOME FILE SYSTEM FUNCTIONALITY */
