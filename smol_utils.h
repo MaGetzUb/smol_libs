@@ -86,6 +86,19 @@ typedef struct _smol_file_info smol_file_info_t;
 #	endif 
 #	define SMOL_THREAD_LOCAL __thread
 #endif 
+
+#ifndef SMOL_ALLOC
+#define SMOL_ALLOC( size ) malloc(size)
+#endif 
+
+#ifndef SMOL_FREE
+#define SMOL_FREE( ptr ) free(ptr)
+#endif 
+
+#ifndef SMOL_REALLOC
+#define SMOL_REALLOC( old_ptr, new_size ) realloc(old_ptr, new_size)
+#endif 
+
 //smol_timer - Returns high precision system up time in seconds on
 //             Windows, and high precision time since Unix epoch on Linux. 
 //Returns: double - containing seconds.microseconds since the last start 
@@ -389,7 +402,7 @@ struct { \
 
 //Frees a vector, and sets it's allocation and count to zero
 #define smol_vector_free(vec) { \
-	free((void*)(vec)); \
+	SMOL_FREE((void*)(vec)); \
 	(vec)->count = 0; \
 	(vec)->allocation = 0; \
 } (void)0
