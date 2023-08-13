@@ -720,13 +720,15 @@ void smol_stack_clear(smol_stack_t* stack) {
 }
 
 
-smol_font_t smol_default_font = { 0 };
+static smol_font_t smol__default_font = { 0 };
 #define PXF_NUM_PRINTABLE_GLYPHS 94
 #define SMOL_BUILTIN_FONT_WIDTH 9
 #define SMOL_BUILTIN_FONT_HEIGHT 13
-char BUILTIN_FONT_DATA[128 * SMOL_BUILTIN_FONT_HEIGHT * SMOL_BUILTIN_FONT_WIDTH];
-char BUILTIN_FONT_GEOM[128 * 2];
-const char SMOL_BUILTIN_FONT_BLOB[] = 
+static char* smol__builtin_font_data;
+static char* smol__builtin_geom_data;
+static int smol__builtin_font_refs;
+
+static const char SMOL_BUILTIN_FONT_BLOB[] = 
 "AAACAQCAQCAQCAACAAAAAAAoFAoAAAAAAAAAAAAAAACgUPwoFAofhQKAAAAAAAQHBEIA4AhEHAQAAAAAAICiIgICAgIiKAgAAAAAAAAAAAAAAAAAAAAAAAAACAQCAAAAAAAA"
 "AAAAAAAAICAQEAgEAgEAQCAIAAAEAQCAIBAIBAICAQEAAAAAABsHD+HBsAAAAAAAAAAAACAQCD+CAQCAAAAAAAAAAAAAAAAAAAQEAAAAAAAAAAAAD+AAAAAAAAAAAAAA"
 "AAAAAAAAAQAAAAAAAACAgICAgICAAAAAAAAA4IhEIhEIhEIg4AAAAAACBwCAQCAQCAQPgAAAAAA4IgEAgICAgIB8AAAAAAHBEAgEDAEAhEHAAAAAAAIDAYFAoJB8BAcA"
@@ -742,7 +744,8 @@ const char SMOL_BUILTIN_FONT_BLOB[] =
 "AAAAAAAAfhCIRCIR8IDgAAAAAAAB+QiEQiEPgEBwAAAAAAAdgyEAgED4AAAAAAAAAAB8QRwBiCPgAAAAAAAEAgPAgEAgEgYAAAAAAAAAADMIhEIhMGwAAAAAAAAAAdxE"
 "IgoFAQAAAAAAAAAADuIhUKgoFAAAAAAAAAAAdxEHA4IjuAAAAAAAAAADuIhEFAoCAQMAAAAAAAAfiICAgIj8AAAAAABgQCAQCBgCAQCAQBgACAQCAQCAQCAQCAQCAQAA"
 "AMAQCAQCAMCAQCAQMAAAAAMSSRgAAAAAAAAA=";
-const char* BUILTIN_FONT_GEOM_BLOB = 
+
+static const char BUILTIN_FONT_GEOM_BLOB[] =
 "BAEDAwEHAgUBBwAABAEDAwMDAQcBBwMCAQcEAQEHAgUCBQIFAgUCBQIFAgUCBQIFAgUEAQMCAgQCBQMEAgUBBwEHAQcBBwEHAQcBBwEHAQcCBQEGAQcBBwEHAQcBBwEHAQcB"
 "BwEHAQcBBwEHAQcBBwEHAQcDAwEHAwMCBQAIAwIBBwEHAQcBBwEHAgQBBwEHAgUCBAEHAgUBBwEHAQcBBwEHAQcBBwIFAQcBBwEHAQcBBwEGAgUEAQIFAQf9=";
 
@@ -778,18 +781,23 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 	smol_stack_push_immediate(&canvas.scissor_stack, scissor);
 
 	//This default font stuff is bit hacky.. Maybe there should be some sort of base64 decoder... 
-	if(smol_default_font.glyphs == NULL) {
+	if(smol__builtin_font_refs == 0) {
 
-		smol_default_font.glyph_width = SMOL_BUILTIN_FONT_WIDTH;
-		smol_default_font.glyph_height = SMOL_BUILTIN_FONT_HEIGHT;
-		smol_default_font.geometry = NULL;
+		smol__default_font.glyph_width = SMOL_BUILTIN_FONT_WIDTH;
+		smol__default_font.glyph_height = SMOL_BUILTIN_FONT_HEIGHT;
+		smol__default_font.geometry = NULL;
 	
-		int num_glyph_pixels = smol_default_font.glyph_width * smol_default_font.glyph_height;;
+		int num_glyph_pixels = smol__default_font.glyph_width * smol__default_font.glyph_height;;
 
-		int data_size = smol_default_font.glyph_width * smol_default_font.glyph_height * PXF_NUM_PRINTABLE_GLYPHS;
-		int alloc_size = smol_default_font.glyph_width * smol_default_font.glyph_height * 128;
-		char* glyph_data = BUILTIN_FONT_DATA;
-		smol_default_font.glyphs = BUILTIN_FONT_DATA;
+		int data_size = smol__default_font.glyph_width * smol__default_font.glyph_height * PXF_NUM_PRINTABLE_GLYPHS;
+		int alloc_size = smol__default_font.glyph_width * smol__default_font.glyph_height * 128;
+
+		int size = 128 * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
+		smol__builtin_font_data = memset(malloc(size), 0, size);
+		smol__builtin_geom_data = memset(malloc(128 * 2), 0, 128*2);
+
+		char* glyph_data = smol__builtin_font_data;
+		smol__default_font.glyphs = smol__builtin_font_data;
 
 		
 
@@ -823,8 +831,8 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 			data += 4;
 		}
 
-		smol_font_t* font[] = { &smol_default_font };
-		smol_default_font.geometry = BUILTIN_FONT_GEOM;
+		smol_font_t* font[] = { &smol__default_font };
+		smol__default_font.geometry = smol__builtin_geom_data;
 		data = BUILTIN_FONT_GEOM_BLOB;
 		int geoms = 0;
 		for(int i = 0; i < PXF_NUM_PRINTABLE_GLYPHS; i++) {
@@ -836,7 +844,7 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 			;
 			
 			for(int i = 16; i >= 0; i-=8) {
-				BUILTIN_FONT_GEOM[FIRST_VISIBLE_SYMBOL*2+geoms++] = (smol_u8)(((bits) >> i) & 0xFF);
+				smol__builtin_geom_data[FIRST_VISIBLE_SYMBOL*2+geoms++] = (smol_u8)(((bits) >> i) & 0xFF);
 				if(geoms > PXF_NUM_PRINTABLE_GLYPHS * 2)
 					goto exit;
 			}
@@ -847,6 +855,7 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 
 
 		smol_stack_push(&canvas.font_stack, font);
+		smol__builtin_font_refs++;
 	}
 
 	return canvas;
