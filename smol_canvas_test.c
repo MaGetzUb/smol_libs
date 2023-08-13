@@ -25,18 +25,13 @@ int main() {
 		PXF_SMOL_FONT_16X16_WIDTH,
 		PXF_SMOL_FONT_16X16_HEIGHT,
 		(smol_font_hor_geometry_t*)PXF_SMOL_FONT_16X16_OFFSET_X_WIDTH
-	);
+	); 
 
 	smol_image_t img = { 0 };
 	img = smol_load_image_qoi("res/gfx/test.qoi");
 
 	smol_frame_t* frame = smol_frame_create(512, 512, "Canvas test");
 	smol_canvas_t canvas = smol_canvas_create(512, 512);
-	
-	smol_canvas_set_font(&canvas, &font);
-
-	smol_file_info_t info = { 0 };
-	smol_file_scan_session_t filescan = smol_start_file_scan_session(&info);
 
 	int origin_x = 20;
 	int origin_y = 20;

@@ -618,6 +618,7 @@ typedef struct _smol_frame_t {
 	xcb_connection_t* display_server_connection;
 	xcb_screen_t* screen;
 	xcb_window_t frame_window;
+	xcb_visualtype_t *visual;
 #	endif
 #	if defined(SMOL_FRAME_BACKEND_XCB) || defined(SMOL_FRAME_BACKEND_WAYLAND) 
 	struct xkb_context* kbcontext;
@@ -814,9 +815,8 @@ smol_gl_context_t smol_frame_get_gl_context(smol_frame_t* frame) {
 #pragma region Win32 Implementation
 #if defined(SMOL_PLATFORM_WINDOWS)
 
-WNDCLASSEX smol__wnd_class;
-
-HMODULE smol__wingdi;
+static WNDCLASSEX smol__wnd_class;
+static HMODULE smol__wingdi;
 
 typedef HGDIOBJ smol_GetStockObject_proc(int i);
 typedef int smol_ChoosePixelFormat_proc(HDC hdc, const PIXELFORMATDESCRIPTOR *ppfd);
@@ -824,11 +824,11 @@ typedef BOOL smol_SetPixelFormat_proc(HDC hdc,int format, const PIXELFORMATDESCR
 typedef BOOL smol_SwapBuffers_proc(HDC unnamedParam1);
 typedef int smol_StretchDIBits_proc(HDC hdc, int xDest, int yDest, int DestWidth, int DestHeight, int xSrc, int ySrc, int SrcWidth, int SrcHeight, const VOID* lpBits, const BITMAPINFO* lpbmi, UINT iUsage, DWORD rop);
 
-smol_GetStockObject_proc* smol_GetStockObject;
-smol_ChoosePixelFormat_proc* smol_ChoosePixelFormat;
-smol_SetPixelFormat_proc* smol_SetPixelFormat;
-smol_SwapBuffers_proc* smol_SwapBuffers;
-smol_StretchDIBits_proc* smol_StretchDIBits;
+static smol_GetStockObject_proc* smol_GetStockObject;
+static smol_ChoosePixelFormat_proc* smol_ChoosePixelFormat;
+static smol_SetPixelFormat_proc* smol_SetPixelFormat;
+static smol_SwapBuffers_proc* smol_SwapBuffers;
+static smol_StretchDIBits_proc* smol_StretchDIBits;
 
 //Some OpenGL Stuff for windows:
 typedef HGLRC APIENTRY smol_wglCreateContext_proc(HDC);
@@ -955,17 +955,17 @@ typedef BOOL APIENTRY smol_wglGetPixelFormatAttribfvARB_proc(HDC hdc, int iPixel
 #define GL_SAMPLE_COVERAGE_INVERT_ARB           0x80AB
 
 
-smol_wglCreateContext_proc *smol_wglCreateContext = NULL;
-smol_wglDeleteContext_proc* smol_wglDeleteContext = NULL;
-smol_wglMakeCurrent_proc* smol_wglMakeCurrent = NULL;
-smol_wglGetProcAddress_proc* smol_wglGetProcAddress = NULL;
-smol_wglSwapIntervalEXT_proc* smol_wglSwapIntervalEXT = NULL;
+static smol_wglCreateContext_proc *smol_wglCreateContext = NULL;
+static smol_wglDeleteContext_proc* smol_wglDeleteContext = NULL;
+static smol_wglMakeCurrent_proc* smol_wglMakeCurrent = NULL;
+static smol_wglGetProcAddress_proc* smol_wglGetProcAddress = NULL;
+static smol_wglSwapIntervalEXT_proc* smol_wglSwapIntervalEXT = NULL;
 
-smol_wglCreateContextAttribsARB_proc* smol_wglCreateContextAttribsARB = NULL;
+static smol_wglCreateContextAttribsARB_proc* smol_wglCreateContextAttribsARB = NULL;
 
-smol_wglGetPixelFormatAttribfvARB_proc* smol_wglGetPixelFormatAttribfvARB = NULL;
-smol_wglGetPixelFormatAttribivARB_proc* smol_wglGetPixelFormatAttribivARB = NULL;
-smol_wglChoosePixelFormatARB_proc* smol_wglChoosePixelFormatARB = NULL;
+static smol_wglGetPixelFormatAttribfvARB_proc* smol_wglGetPixelFormatAttribfvARB = NULL;
+static smol_wglGetPixelFormatAttribivARB_proc* smol_wglGetPixelFormatAttribivARB = NULL;
+static smol_wglChoosePixelFormatARB_proc* smol_wglChoosePixelFormatARB = NULL;
 
 LRESULT CALLBACK smol_frame_handle_event(HWND wnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -1607,7 +1607,6 @@ void smol_frame_blit_pixels(
 	*(((DWORD*)bmi->bmiColors)+0) = 0x000000FF;
 	*(((DWORD*)bmi->bmiColors)+1) = 0x0000FF00;
 	*(((DWORD*)bmi->bmiColors)+2) = 0x00FF0000;
-	*(((DWORD*)bmi->bmiColors)+3) = 0xFF000000;
 
 	smol_StretchDIBits(GetDC(frame->frame_handle_win32), dstX, dstY, dstW, dstH, srcX, srcY, srcW, srcH, pixels, bmi, DIB_RGB_COLORS, SRCCOPY);
 	
@@ -1869,59 +1868,59 @@ typedef void smol_XUndefineCursor_proc(Display *display, Window w);
 
 
 
-smol_XOpenDisplay_proc* smol_XOpenDisplay;
-smol_XCloseDisplay_proc* smol_XCloseDisplay;
-smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
-smol_XCreateWindow_proc* smol_XCreateWindow;
-smol_XDestroyWindow_proc* smol_XDestroyWindow;
-smol_XMapWindow_proc* smol_XMapWindow;
-smol_XFlush_proc* smol_XFlush;
-smol_XSetWMNormalHints_proc* smol_XSetWMNormalHints;
-smol_XInternAtom_proc* smol_XInternAtom;
-smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
-smol_XStoreName_proc* smol_XStoreName;
-smol_XOpenIM_proc* smol_XOpenIM;
-smol_XCreateImage_proc* smol_XCreateImage;
-smol_XDestroyImage_proc* smol_XDestroyImage;
-smol_XCreateGC_proc* smol_XCreateGC;
-smol_XFreeGC_proc* smol_XFreeGC;
-smol_XOpenDisplay_proc* smol_XOpenDisplay;
-smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
-smol_XCreateWindow_proc* smol_XCreateWindow;
-smol_XAllocSizeHints_proc* smol_XAllocSizeHints;
-smol_XSetWMNormalHints_proc* smol_XSetWMNormalHints;
-smol_XInternAtom_proc* smol_XInternAtom;
-smol_XInternAtom_proc* smol_XInternAtom;
-smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
-smol_XStoreName_proc* smol_XStoreName;
-smol_XMapWindow_proc* smol_XMapWindow;
-smol_XOpenIM_proc* smol_XOpenIM;
-smol_XGetIMValues_proc* smol_XGetIMValues;
-smol_XCreateIC_proc* smol_XCreateIC;
-smol_XSetICFocus_proc* smol_XSetICFocus;
-smol_XFlush_proc* smol_XFlush;
-smol_XChangeProperty_proc* smol_XChangeProperty;
-smol_XFree_proc* smol_XFree;
-smol_XCreateColormap_proc* smol_XCreateColormap;
-smol_XInstallColormap_proc* smol_XInstallColormap;
-smol_XDestroyWindow_proc* smol_XDestroyWindow;
-smol_XDestroyIC_proc* smol_XDestroyIC;
-smol_XCloseIM_proc* smol_XCloseIM;
-smol_XCloseDisplay_proc* smol_XCloseDisplay;
-smol_XNextEvent_proc* smol_XNextEvent;
-smol_XFilterEvent_proc* smol_XFilterEvent;
-smol_XPeekEvent_proc* smol_XPeekEvent;
-smol_XLookupKeysym_proc* smol_XLookupKeysym;
-smol_Xutf8LookupString_proc* smol_Xutf8LookupString;
-smol_XPending_proc* smol_XPending;
-smol_XPutImage_proc* smol_XPutImage;
+static smol_XOpenDisplay_proc* smol_XOpenDisplay;
+static smol_XCloseDisplay_proc* smol_XCloseDisplay;
+static smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
+static smol_XCreateWindow_proc* smol_XCreateWindow;
+static smol_XDestroyWindow_proc* smol_XDestroyWindow;
+static smol_XMapWindow_proc* smol_XMapWindow;
+static smol_XFlush_proc* smol_XFlush;
+static smol_XSetWMNormalHints_proc* smol_XSetWMNormalHints;
+static smol_XInternAtom_proc* smol_XInternAtom;
+static smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
+static smol_XStoreName_proc* smol_XStoreName;
+static smol_XOpenIM_proc* smol_XOpenIM;
+static smol_XCreateImage_proc* smol_XCreateImage;
+static smol_XDestroyImage_proc* smol_XDestroyImage;
+static smol_XCreateGC_proc* smol_XCreateGC;
+static smol_XFreeGC_proc* smol_XFreeGC;
+static smol_XOpenDisplay_proc* smol_XOpenDisplay;
+static smol_XGetWindowAttributes_proc* smol_XGetWindowAttributes;
+static smol_XCreateWindow_proc* smol_XCreateWindow;
+static smol_XAllocSizeHints_proc* smol_XAllocSizeHints;
+static smol_XSetWMNormalHints_proc* smol_XSetWMNormalHints;
+static smol_XInternAtom_proc* smol_XInternAtom;
+static smol_XInternAtom_proc* smol_XInternAtom;
+static smol_XSetWMProtocols_proc* smol_XSetWMProtocols;
+static smol_XStoreName_proc* smol_XStoreName;
+static smol_XMapWindow_proc* smol_XMapWindow;
+static smol_XOpenIM_proc* smol_XOpenIM;
+static smol_XGetIMValues_proc* smol_XGetIMValues;
+static smol_XCreateIC_proc* smol_XCreateIC;
+static smol_XSetICFocus_proc* smol_XSetICFocus;
+static smol_XFlush_proc* smol_XFlush;
+static smol_XChangeProperty_proc* smol_XChangeProperty;
+static smol_XFree_proc* smol_XFree;
+static smol_XCreateColormap_proc* smol_XCreateColormap;
+static smol_XInstallColormap_proc* smol_XInstallColormap;
+static smol_XDestroyWindow_proc* smol_XDestroyWindow;
+static smol_XDestroyIC_proc* smol_XDestroyIC;
+static smol_XCloseIM_proc* smol_XCloseIM;
+static smol_XCloseDisplay_proc* smol_XCloseDisplay;
+static smol_XNextEvent_proc* smol_XNextEvent;
+static smol_XFilterEvent_proc* smol_XFilterEvent;
+static smol_XPeekEvent_proc* smol_XPeekEvent;
+static smol_XLookupKeysym_proc* smol_XLookupKeysym;
+static smol_Xutf8LookupString_proc* smol_Xutf8LookupString;
+static smol_XPending_proc* smol_XPending;
+static smol_XPutImage_proc* smol_XPutImage;
 
-smol_XCreatePixmap_proc* smol_XCreatePixmap;
-smol_XFreePixmap_proc* smol_XFreePixmap;
-smol_XCreatePixmapCursor_proc* smol_XCreatePixmapCursor;
-smol_XFreeCursor_proc* smol_XFreeCursor;
-smol_XDefineCursor_proc* smol_XDefineCursor;
-smol_XUndefineCursor_proc* smol_XUndefineCursor;
+static smol_XCreatePixmap_proc* smol_XCreatePixmap;
+static smol_XFreePixmap_proc* smol_XFreePixmap;
+static smol_XCreatePixmapCursor_proc* smol_XCreatePixmapCursor;
+static smol_XFreeCursor_proc* smol_XFreeCursor;
+static smol_XDefineCursor_proc* smol_XDefineCursor;
+static smol_XUndefineCursor_proc* smol_XUndefineCursor;
 
 
 typedef XVisualInfo* smol_glXGetVisualFromFBConfig_proc(Display* display, Window window);
@@ -1933,14 +1932,14 @@ typedef void smol_glXSwapBuffers_proc(Display* display, Window window);
 typedef GLXContext smol_glXCreateContextAttribsARB_proc(Display *dpy, GLXFBConfig config,  GLXContext share_context, Bool direct, const int *attrib_list);
 typedef void smol_glxSwapIntervalEXT_proc(int);
 
-smol_glXGetVisualFromFBConfig_proc* smol_glXGetVisualFromFBConfig = NULL;
-smol_glXMakeCurrent_proc* smol_glXMakeCurrent = NULL;
-smol_glXGetProcAddress_proc* smol_glXGetProcAddress = NULL;
-smol_glXChooseFBConfig_proc* smol_glXChooseFBConfig = NULL;
-smol_glXGetFBConfigAttrib_proc* smol_glXGetFBConfigAttrib = NULL;
-smol_glXSwapBuffers_proc* smol_glXSwapBuffers = NULL;
-smol_glXCreateContextAttribsARB_proc* smol_glXCreateContextAttribsARB = NULL;
-smol_glxSwapIntervalEXT_proc* smol_glXSwapIntervalEXT = NULL;
+static smol_glXGetVisualFromFBConfig_proc* smol_glXGetVisualFromFBConfig = NULL;
+static smol_glXMakeCurrent_proc* smol_glXMakeCurrent = NULL;
+static smol_glXGetProcAddress_proc* smol_glXGetProcAddress = NULL;
+static smol_glXChooseFBConfig_proc* smol_glXChooseFBConfig = NULL;
+static smol_glXGetFBConfigAttrib_proc* smol_glXGetFBConfigAttrib = NULL;
+static smol_glXSwapBuffers_proc* smol_glXSwapBuffers = NULL;
+static smol_glXCreateContextAttribsARB_proc* smol_glXCreateContextAttribsARB = NULL;
+static smol_glxSwapIntervalEXT_proc* smol_glXSwapIntervalEXT = NULL;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	XDestroyImage(renderer->image);
@@ -2566,6 +2565,11 @@ void smol_frame_blit_pixels(
 
 	Visual *visual = DefaultVisual(frame->display_server_connection, DefaultScreen(frame->display_server_connection));
 
+	unsigned int red_mul = ((~(visual->red_mask))+1) & visual->red_mask;
+	unsigned int green_mul = ((~(visual->green_mask))+1) & visual->green_mask;
+	unsigned int blue_mul = ((~(visual->blue_mask))+1) & visual->blue_mask;
+	
+
 	for(int y = startY; y < endY; y++) {
 		int sY = srcY + ((srcH * y) / dstH);
 		int dY = dstY + y;
@@ -2574,9 +2578,9 @@ void smol_frame_blit_pixels(
 			int dX = dstX + x;
 			unsigned int pixel = pixels[sX + sY * width];
 			renderer->pixel_data[dX + dY * renderer->width] = 
-				((((pixel >> 0x00) & 0xFF) * visual->red_mask) / 255) |
-				((((pixel >> 0x08) & 0xFF) * visual->green_mask) / 255) |
-				((((pixel >> 0x10) & 0xFF) * visual->blue_mask) / 255) 
+				(((pixel >> 0x00) & 0xFF) * red_mul) |
+				(((pixel >> 0x08) & 0xFF) * green_mul) |
+				(((pixel >> 0x10) & 0xFF) * blue_mul) 
 			;
 		}
 	}
@@ -2600,10 +2604,10 @@ Window smol_frame_get_x11_window(smol_frame_t* frame) {
 #if defined(SMOL_FRAME_BACKEND_XCB) && defined(SMOL_PLATFORM_LINUX)
 
 //These globals are bit of nasty busines
-xcb_atom_t smol__wm_delete_window_atom;
-xcb_atom_t smol__wm_protocols_atom;
-int smol__num_frames;
-xcb_key_symbols_t* smol__keysyms;
+static xcb_atom_t smol__wm_delete_window_atom;
+static xcb_atom_t smol__wm_protocols_atom;
+static int smol__num_frames;
+static xcb_key_symbols_t* smol__keysyms;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	SMOL_FREE(renderer->pixel_data);
@@ -2697,6 +2701,22 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	xcb_screen_t* screen = xcb_setup_roots_iterator(setup).data;
 
 	xcb_window_t window = xcb_generate_id(connection);
+
+	xcb_visualid_t default_visual_id = screen->root_visual;
+    xcb_visualtype_t *visual = NULL;
+    xcb_depth_iterator_t depth_iter = xcb_screen_allowed_depths_iterator(screen);
+    for (; depth_iter.rem; xcb_depth_next(&depth_iter)) {
+        xcb_visualtype_iterator_t visual_iter = xcb_depth_visuals_iterator(depth_iter.data);
+        for (; visual_iter.rem; xcb_visualtype_next(&visual_iter)) {
+            if (visual_iter.data->visual_id == default_visual_id) {
+                visual = visual_iter.data;
+                break;
+            }
+        }
+        if (visual) {
+            break;
+        }
+    }
 
 	struct xkb_context* kbcontext;
 	struct xkb_keymap* kbkeymap;
@@ -2837,6 +2857,7 @@ smol_frame_t* smol_frame_create_advanced(const smol_frame_config_t* config) {
 	result->width = config->width;
 	result->height = config->height;
 	result->screen = screen;
+	result->visual = visual;
 	result->frame_window = window;
 	result->kbcontext = kbcontext;
 	result->kbkeymap = kbkeymap;
@@ -3030,6 +3051,11 @@ void smol_frame_set_title(smol_frame_t* frame, const char* title) {
 		(const void*)title
 	);
 	xcb_flush(frame->display_server_connection);
+}
+
+void smol_frame_set_cursor_visibility(smol_frame_t* frame, int visibility) {
+	(void)frame;
+	(void)visibility;
 }
 
 int smol_frame_gl_swap_buffers(smol_frame_t* frame) {
@@ -3230,15 +3256,27 @@ void smol_frame_blit_pixels(
 	int endX = (dstX + dstW) > renderer->width ? (dstX + dstW - renderer->width) : dstW; 
 	int endY = (dstY + dstH) > renderer->height ? (dstY + dstH - renderer->height) : dstH;
 
+	xcb_visualtype_t* visual = frame->visual;
+	unsigned int red_mul = ((~(visual->red_mask))+1) & visual->red_mask;
+	unsigned int green_mul = ((~(visual->green_mask))+1) & visual->green_mask;
+	unsigned int blue_mul = ((~(visual->blue_mask))+1) & visual->blue_mask;
+	
+
 	for(int y = startY; y < endY; y++) {
 		int sY = srcY + ((srcH * y) / dstH);
 		int dY = dstY + y;
 		for(int x = startX; x < endX; x++) {
 			int sX = srcX + ((srcW * x) / dstW);
 			int dX = dstX + x;
-			renderer->pixel_data[dX + dY * renderer->width] = pixels[sX + sY * width];
+			unsigned int pixel = pixels[sX + sY * width];
+			renderer->pixel_data[dX + dY * renderer->width] = 
+				(((pixel >> 0x00) & 0xFF) * red_mul) |
+				(((pixel >> 0x08) & 0xFF) * green_mul) |
+				(((pixel >> 0x10) & 0xFF) * blue_mul) 
+			;
 		}
 	}
+
 
 	uint32_t bytesPerRow = 4 * renderer->width;
 	xcb_put_image(
