@@ -1169,6 +1169,7 @@ void smol_canvas_draw_image(smol_canvas_t* canvas, smol_image_t* image, int x, i
 void smol_canvas_draw_image_subrect_streched(smol_canvas_t* canvas, smol_image_t* image, int x, int y, int dst_w, int dst_h, int src_x, int src_y, int src_w, int src_h) {
 	
 	smol_rect_t rect = smol_stack_back(canvas->scissor_stack, smol_rect_t);
+	smol_pixel_blend_func_proc blend = smol_stack_back(canvas->blend_funcs, smol_pixel_blend_func_proc);
 
 	int left = rect.left;
 	int top = rect.top;
@@ -1200,8 +1201,6 @@ void smol_canvas_draw_image_subrect_streched(smol_canvas_t* canvas, smol_image_t
 		b -= bottom;
 	}
 
-	
-	smol_pixel_blend_func_proc blend = smol_stack_back(canvas->blend_funcs, smol_pixel_blend_func_proc);
 
 	for(int py = t, iy = 0; py < b; py++, iy++)
 	for(int px = l, ix = 0; px < r; px++, ix++) 
