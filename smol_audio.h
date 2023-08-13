@@ -297,7 +297,8 @@ typedef struct _smol_mixer_t {
 	int num_active_voices;
 } smol_mixer_t;
 
-
+#ifndef SMOL_BSF_BSR
+#define SMOL_BSF_BSR
 SMOL_INLINE int smol_bsf(unsigned long long mask) {
 #ifdef _MSC_VER
 	DWORD res;
@@ -318,6 +319,7 @@ SMOL_INLINE int smol_bsr(unsigned long long mask) {
 	return 63-__builtin_clzll(mask);
 #endif
 }
+#endif 
 
 int smol_mixer_playing_voice_count(smol_mixer_t* mixer) {
 	return mixer->num_active_voices;
