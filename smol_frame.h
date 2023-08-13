@@ -2604,10 +2604,10 @@ Window smol_frame_get_x11_window(smol_frame_t* frame) {
 #if defined(SMOL_FRAME_BACKEND_XCB) && defined(SMOL_PLATFORM_LINUX)
 
 //These globals are bit of nasty busines
-xcb_atom_t smol__wm_delete_window_atom;
-xcb_atom_t smol__wm_protocols_atom;
-int smol__num_frames;
-xcb_key_symbols_t* smol__keysyms;
+static xcb_atom_t smol__wm_delete_window_atom;
+static xcb_atom_t smol__wm_protocols_atom;
+static int smol__num_frames;
+static xcb_key_symbols_t* smol__keysyms;
 
 void smol_renderer_destroy(smol_software_renderer_t* renderer) {
 	SMOL_FREE(renderer->pixel_data);
