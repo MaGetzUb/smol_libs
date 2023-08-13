@@ -180,9 +180,9 @@ SMOL_INLINE smol_pixel_t smol_hsva(smol_u16 hue, smol_byte sat, smol_byte val, s
 
 	hue -= ((hue / 360) * 360);
 
-	smol_u16 red = -60 + abs(hue - 180);
-	smol_u16 grn = 120 - abs(hue - 120);
-	smol_u16 blu = 120 - abs(hue - 240);
+	smol_i16 red = -60 + abs(((smol_i16)hue) - 180);
+	smol_i16 grn = 120 - abs(((smol_i16)hue) - 120);
+	smol_i16 blu = 120 - abs(((smol_i16)hue) - 240);
 
 	if(red < 0) red = 0;
 	if(red > 60) red = 60;
