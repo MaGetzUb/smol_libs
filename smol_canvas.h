@@ -25,6 +25,7 @@ distribution.
 #define SMOL_CANVAS_H
 
 #include <string.h>
+#include <stdarg.h>
 
 #ifdef _MSC_VER
 #	ifndef SMOL_INLINE
@@ -132,7 +133,7 @@ typedef union _smol_pixel_t {
 //A structure of image
 typedef struct _smol_image_t {
 	smol_pixel_t* pixel_data;
-	void(*free_func)(void*); //This is optional, image destroy will call this, if images it's set
+	void(*free_func)(void*); //This is optional, smol_image_destroy will call this, if images it's set
 	smol_u32 width;
 	smol_u32 height;
 } smol_image_t;
@@ -173,6 +174,39 @@ SMOL_INLINE smol_pixel_t smol_rgba(smol_byte r, smol_byte g, smol_byte b, smol_b
 	pixel.b = b;
 	pixel.a = a;
 	return pixel;
+}
+
+SMOL_INLINE smol_pixel_t smol_hsva(smol_u16 hue, smol_byte sat, smol_byte val, smol_byte alp) {
+
+	hue -= ((hue / 360) * 360);
+
+	smol_u16 red = -60 + abs(hue - 180);
+	smol_u16 grn = 120 - abs(hue - 120);
+	smol_u16 blu = 120 - abs(hue - 240);
+
+	if(red < 0) red = 0;
+	if(red > 60) red = 60;
+
+	if(grn < 0) grn = 0;
+	if(grn > 60) grn = 60;
+
+	if(blu < 0) blu = 0;
+	if(blu > 60) blu = 60;
+
+	red = red * 255 / 60;
+	grn = grn * 255 / 60;
+	blu = blu * 255 / 60;;
+
+	smol_u8 inv_sat = 255 - sat;
+
+	red = ((((red * sat) / 255) + inv_sat) * val) / 255;
+	grn = ((((grn * sat) / 255) + inv_sat) * val) / 255;
+	blu = ((((blu * sat) / 255) + inv_sat) * val) / 255;
+	
+	smol_pixel_t res = { red, grn, blu, alp };
+
+	return res;
+
 }
 
 //smol_image_create_advanced - Creates an image, allocates buffer if no buffer is provided. Clears also the newly allocated buffer with color.
@@ -226,6 +260,41 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height);
 // - smol_canvas_t* canvas -- Pointer to the canvas
 // - smol_pixel_t color    -- A pixel color (RGBA) 
 void smol_canvas_set_color(smol_canvas_t* canvas, smol_pixel_t color);
+
+//smol_canvas_set_color_rgb - Sets current draw color the color of the canvas using RGB
+// Arguments:
+// - smol_canvas_t* canvas -- Pointer to the canvas
+// - smol_byte r -- Red value between (0...255)
+// - smol_byte g -- Green value between (0...255)
+// - smol_byte b -- Blue value between (0...255)
+void smol_canvas_set_color_rgb(smol_canvas_t* canvas, smol_byte r, smol_byte g, smol_byte b);
+
+//smol_canvas_set_color_rgba - Sets current draw color the color of the canvas using RGBA
+// Arguments:
+// - smol_canvas_t* canvas -- Pointer to the canvas
+// - smol_byte r -- Red value between (0...255)
+// - smol_byte g -- Green value between (0...255)
+// - smol_byte b -- Blue value between (0...255)
+// - smol_byte a -- Alpha value between (0...255)
+void smol_canvas_set_color_rgba(smol_canvas_t* canvas, smol_byte r, smol_byte g, smol_byte b, smol_byte a);
+
+
+//smol_canvas_set_color_hsv - Sets current draw color the color of the canvas using HSV
+// Arguments:
+// - smol_canvas_t* canvas -- Pointer to the canvas
+// - smol_u16 r  -- Hue value between (0...360)
+// - smol_byte s -- Saturation value between (0...255)
+// - smol_byte v -- Value(brighthness) value between (0...255)
+void smol_canvas_set_color_hsv(smol_canvas_t* canvas, smol_u16 h, smol_byte s, smol_byte v);
+
+//smol_canvas_set_color_hsv - Sets current draw color the color of the canvas using HSV
+// Arguments:
+// - smol_canvas_t* canvas -- Pointer to the canvas
+// - smol_u16 r  -- Hue value between (0...360)
+// - smol_byte s -- Saturation value between (0...255)
+// - smol_byte v -- Value(brighthness) value between (0...255)
+// - smol_byte a -- Alpha value between (0...255)
+void smol_canvas_set_color_hsva(smol_canvas_t* canvas, smol_u16 h, smol_byte s, smol_byte v, smol_byte a);
 
 //smol_canvas_clear - Clears the canvas with wanted color
 // Arguments:
@@ -625,7 +694,7 @@ smol_stack_t smol_stack_create(smol_u32 element_size, smol_u32 element_count) {
 
 void* smol_stack_push(smol_stack_t* stack, void* data) {
 	SMOL_ASSERT("BUFFER OVERFLOW!" && (stack->element_count < (stack->total_allocation / stack->element_size)));
-	void* dest = (char*)stack->data + stack->element_count++ * stack->element_size;
+	void* dest = (char*)stack->data + (stack->element_count++ * stack->element_size);
 	return memcpy(
 		dest, 
 		data, 
@@ -650,6 +719,45 @@ void smol_stack_clear(smol_stack_t* stack) {
 	stack->element_count = 0;
 }
 
+
+smol_font_t smol_default_font = { 0 };
+#define PXF_NUM_PRINTABLE_GLYPHS 94
+#define SMOL_BUILTIN_FONT_WIDTH 9
+#define SMOL_BUILTIN_FONT_HEIGHT 13
+char BUILTIN_FONT_DATA[128 * SMOL_BUILTIN_FONT_HEIGHT * SMOL_BUILTIN_FONT_WIDTH];
+char BUILTIN_FONT_GEOM[128 * 2];
+const char SMOL_BUILTIN_FONT_BLOB[] = 
+"AAACAQCAQCAQCAACAAAAAAAoFAoAAAAAAAAAAAAAAACgUPwoFAofhQKAAAAAAAQHBEIA4AhEHAQAAAAAAICiIgICAgIiKAgAAAAAAAAAAAAAAAAAAAAAAAAACAQCAAAAAAAA"
+"AAAAAAAAICAQEAgEAgEAQCAIAAAEAQCAIBAIBAICAQEAAAAAABsHD+HBsAAAAAAAAAAAACAQCD+CAQCAAAAAAAAAAAAAAAAAAAQEAAAAAAAAAAAAD+AAAAAAAAAAAAAA"
+"AAAAAAAAAQAAAAAAAACAgICAgICAAAAAAAAA4IhEIhEIhEIg4AAAAAACBwCAQCAQCAQPgAAAAAA4IgEAgICAgIB8AAAAAAHBEAgEDAEAhEHAAAAAAAIDAYFAoJB8BAcA"
+"AAAAAPhAIBAPAEAhEHAAAAAAAYEBAIB4IhEIg4AAAAAAPhEAgIBAQCAgEAAAAAAA4IhEIg4IhEIg4AAAAAAHBEIhEHgEAgIGAAAAAAAAAAACAAAAAAAQAAAAAAAAAAAQ"
+"AAAAAACAgAAAAAAAAICAgIAgCAIAAAAAAAAAAB8AB8AAAAAAAAAAAAAAgCAIAgICAgAAAAAAHBEAgEBAQCAACAAAAAAA8ISaVSqVScIA4AAAAAAGAQCAoFBEPhEdwAAA"
+"AAD8IRCIR8IRCIT8AAAAAAHhCQCAQCAQBCHgAAAAAD4IhCIRCIRCIj4AAAAAAfxCIBIPBIIBCfwAAAAAD+IRAJB4JBAIDwAAAAAAHhCQCAQCOQRCHgAAAAADuIhEIh8I"
+"hEIjuAAAAAAPgQCAQCAQCAQPgAAAAAA8BAIBAIBCIRBwAAAAAAcxEJBIKBwJBEcwAAAAAD4EAgEAgEAgET+AAAAAAYxENhsKhUIhEdwAAAAADOIhkMhUJhMIjkAAAAAA"
+"HBEQSCQSCQREHAAAAAAD8IRCIR8IBAIDwAAAAAAHBEQSCQSCQREHA2AAAAD8IRCIR8JBIIjmAAAAAAPiCQCAPgCASCPgAAAAAD+SQQCAQCAQCA4AAAAAAdxEIhEIhEIh"
+"EHAAAAAADuIhEIgoFAoCAQAAAAAAdxEIhEKhUKgoFAAAAAADuIgoFAQFAoIjuAAAAAAdxEIgoFAQCAQHAAAAAAD+QgIBAQEAgIT+AAAAAAHAgEAgEAgEAgEAgHAAAAAQ"
+"BAEAQBAEAQAAAAAAAHAIBAIBAIBAIBAIHAACAoIgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAAAgCAAAAAAAAAAAAAAAAAAAAAB4Ah8QiEPQAAAAADAIBAPhCIRCIT8"
+"AAAAAAAAAAB8QSAQCCPgAAAAAAMAgEPiEQiEQh+AAAAAAAAAAB8QT+QCCPgAAAAAAYEAgPAgEAgEB4AAAAAAAAAAB+QiEQh8AgEPAAADAIBALBkIhEIjuAAAAAACAAAB"
+"wCAQCAQPgAAAAAAIAAAPAIBAIBAIBBwAAAYBAIBMJBQOBIYwAAAAAAwCAQCAQCAQCB8AAAAAAAAAADoKhUKhUawAAAAAAAAAAbBkIhEIjuAAAAAAAAAAB8QSCQSCPgAA"
+"AAAAAAAAfhCIRCIR8IDgAAAAAAAB+QiEQiEPgEBwAAAAAAAdgyEAgED4AAAAAAAAAAB8QRwBiCPgAAAAAAAEAgPAgEAgEgYAAAAAAAAAADMIhEIhMGwAAAAAAAAAAdxE"
+"IgoFAQAAAAAAAAAADuIhUKgoFAAAAAAAAAAAdxEHA4IjuAAAAAAAAAADuIhEFAoCAQMAAAAAAAAfiICAgIj8AAAAAABgQCAQCBgCAQCAQBgACAQCAQCAQCAQCAQCAQAA"
+"AMAQCAQCAMCAQCAQMAAAAAMSSRgAAAAAAAAA=";
+const char* BUILTIN_FONT_GEOM_BLOB = 
+"BAEDAwEHAgUBBwAABAEDAwMDAQcBBwMCAQcEAQEHAgUCBQIFAgUCBQIFAgUCBQIFAgUEAQMCAgQCBQMEAgUBBwEHAQcBBwEHAQcBBwEHAQcCBQEGAQcBBwEHAQcBBwEHAQcB"
+"BwEHAQcBBwEHAQcBBwEHAQcDAwEHAwMCBQAIAwIBBwEHAQcBBwEHAgQBBwEHAgUCBAEHAgUBBwEHAQcBBwEHAQcBBwIFAQcBBwEHAQcBBwEGAgUEAQIFAQf9=";
+
+
+#define FIRST_VISIBLE_SYMBOL '!'
+
+SMOL_INLINE int smol_from_base64(char c) {
+	if(c >= 'A' && c <= 'Z') return (c - 'A') +  0;
+	if(c >= 'a' && c <= 'z') return (c - 'a') + 26;
+	if(c >= '0' && c <= '9') return (c - '0') + 52;
+	if(c == '+') return 62;
+	if(c == '/') return 63;
+	return 0;
+}
+
 smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 
 	smol_canvas_t canvas = { 0 };
@@ -669,11 +777,99 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 	smol_rect_t scissor = { 0, 0, width, height };
 	smol_stack_push_immediate(&canvas.scissor_stack, scissor);
 
+	//This default font stuff is bit hacky.. Maybe there should be some sort of base64 decoder... 
+	if(smol_default_font.glyphs == NULL) {
+
+		smol_default_font.glyph_width = SMOL_BUILTIN_FONT_WIDTH;
+		smol_default_font.glyph_height = SMOL_BUILTIN_FONT_HEIGHT;
+		smol_default_font.geometry = NULL;
+	
+		int num_glyph_pixels = smol_default_font.glyph_width * smol_default_font.glyph_height;;
+
+		int data_size = smol_default_font.glyph_width * smol_default_font.glyph_height * PXF_NUM_PRINTABLE_GLYPHS;
+		int alloc_size = smol_default_font.glyph_width * smol_default_font.glyph_height * 128;
+		char* glyph_data = BUILTIN_FONT_DATA;
+		smol_default_font.glyphs = BUILTIN_FONT_DATA;
+
+		
+
+		int offset = FIRST_VISIBLE_SYMBOL * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
+
+
+		const char* data = SMOL_BUILTIN_FONT_BLOB;
+		int index = 0;
+		smol_u32 val = 0;
+		int bits = 0;
+
+		for(int i = 0;; i++) {
+			smol_u32 bits = 
+				smol_from_base64(data[0]) << 0x12 |
+				smol_from_base64(data[1]) << 0x0C | 
+				smol_from_base64(data[2]) << 0x06 | 
+				smol_from_base64(data[3]) << 0x00
+			;
+			for(int j = 0; j < 24 && index < data_size; j++) {
+			
+				int pix = (bits & (0x800000 >> j)) > 0;
+	
+				glyph_data[offset + index++] = pix;
+
+				char title[2] = { FIRST_VISIBLE_SYMBOL + (index / num_glyph_pixels), 0 };
+			}
+
+			if(index >= data_size)
+				break;
+
+			data += 4;
+		}
+
+		smol_font_t* font[] = { &smol_default_font };
+		smol_default_font.geometry = BUILTIN_FONT_GEOM;
+		data = BUILTIN_FONT_GEOM_BLOB;
+		int geoms = 0;
+		for(int i = 0; i < PXF_NUM_PRINTABLE_GLYPHS; i++) {
+			smol_u32 bits = 
+				smol_from_base64(data[0]) << 0x12 |
+				smol_from_base64(data[1]) << 0x0C | 
+				smol_from_base64(data[2]) << 0x06 | 
+				smol_from_base64(data[3]) << 0x00
+			;
+			
+			for(int i = 16; i >= 0; i-=8) {
+				BUILTIN_FONT_GEOM[FIRST_VISIBLE_SYMBOL*2+geoms++] = (smol_u8)(((bits) >> i) & 0xFF);
+				if(geoms > PXF_NUM_PRINTABLE_GLYPHS * 2)
+					goto exit;
+			}
+			
+			data += 4;
+		}
+		exit:
+
+
+		smol_stack_push(&canvas.font_stack, font);
+	}
+
 	return canvas;
 }
 
 void smol_canvas_set_color(smol_canvas_t* canvas, smol_pixel_t color) {
 	smol_stack_back(canvas->color_stack, smol_pixel_t) = color;
+}
+
+void smol_canvas_set_color_rgb(smol_canvas_t* canvas, smol_byte r, smol_byte g, smol_byte b) {
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = smol_rgba(r, g, b, 255);
+}
+
+void smol_canvas_set_color_rgba(smol_canvas_t* canvas, smol_byte r, smol_byte g, smol_byte b, smol_byte a) {
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = smol_rgba(r, g, b, a);
+}
+
+void smol_canvas_set_color_hsv(smol_canvas_t* canvas, smol_u16 h, smol_byte s, smol_byte v) {
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = smol_hsva(h, s, v, 255);
+}
+
+void smol_canvas_set_color_hsva(smol_canvas_t* canvas, smol_u16 h, smol_byte s, smol_byte v, smol_byte a) {
+	smol_stack_back(canvas->color_stack, smol_pixel_t) = smol_hsva(h, s, v, a);
 }
 
 void smol_canvas_darken_color(smol_canvas_t* canvas, smol_u16 percentage) {
@@ -1025,11 +1221,17 @@ void smol_canvas_draw_circle(smol_canvas_t* canvas, int xc, int yc, int rad) {
 	do {
 
 
-		if((xc - y) >= left && (yc + x) > top && (xc - y) < right && (yc + x) < bottom) smol_image_blend_pixel(&canvas->draw_surface, xc - y, yc + x, color, blend);
-		if((xc - y) >= left && (yc - x) > top && (xc - y) < right && (yc - x) < bottom) smol_image_blend_pixel(&canvas->draw_surface, xc - y, yc - x, color, blend);
+		if((xc - y) >= left && (yc + x) > top && (xc - y) < right && (yc + x) < bottom) 
+			smol_image_blend_pixel(&canvas->draw_surface, xc - y, yc + x, color, blend);
 
-		if((xc - x) >= left && (yc + y) > top && (xc - x) < right && (yc + y) < bottom) smol_image_blend_pixel(&canvas->draw_surface, xc - x, yc + y, color, blend);
-		if((xc - x) >= left && (yc - y) > top && (xc - x) < right && (yc - y) < bottom) smol_image_blend_pixel(&canvas->draw_surface, xc - x, yc - y, color, blend);
+		if((xc - y) >= left && (yc - x) > top && (xc - y) < right && (yc - x) < bottom)
+			smol_image_blend_pixel(&canvas->draw_surface, xc - y, yc - x, color, blend);
+
+		if((xc - x) >= left && (yc + y) > top && (xc - x) < right && (yc + y) < bottom) 
+			smol_image_blend_pixel(&canvas->draw_surface, xc - x, yc + y, color, blend);
+
+		if((xc - x) >= left && (yc - y) > top && (xc - x) < right && (yc - y) < bottom) 
+			smol_image_blend_pixel(&canvas->draw_surface, xc - x, yc - y, color, blend);
 		
 
 		rad = err;
@@ -1098,7 +1300,6 @@ void smol_canvas_draw_rect(smol_canvas_t* canvas, int x, int y, int w, int h) {
 
 	smol_pixel_t color = smol_stack_back(canvas->color_stack, smol_pixel_t);
 	smol_pixel_blend_func_proc blend = smol_stack_back(canvas->blend_funcs, smol_pixel_blend_func_proc);
-
 	smol_rect_t rect = smol_stack_back(canvas->scissor_stack, smol_rect_t);
 
 	int left = rect.left;
@@ -1126,7 +1327,6 @@ void smol_canvas_fill_rect(smol_canvas_t* canvas, int x, int y, int w, int h) {
 
 	smol_pixel_t color = smol_stack_back(canvas->color_stack, smol_pixel_t);
 	smol_pixel_blend_func_proc blend = smol_stack_back(canvas->blend_funcs, smol_pixel_blend_func_proc);
-
 	smol_rect_t rect = smol_stack_back(canvas->scissor_stack, smol_rect_t);
 
 	int left = rect.left;
@@ -1305,12 +1505,17 @@ void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, int scale, con
 	smol_pixel_blend_func_proc blend = smol_stack_back(canvas->blend_funcs, smol_pixel_blend_func_proc);
 	smol_rect_t rect = smol_stack_back(canvas->scissor_stack, smol_rect_t);
 
+	int space = font->geometry ? font->geometry['_'].width : font->glyph_width;
+
 	int gx = tx;
 	int gy = ty;
 	for(; *str; ++str) {
 
 		if(*str == ' ') {
-			gx += font->geometry['_'].width;
+			gx += space;
+			continue;
+		} else if(*str == '\t') {
+			gx += space * 4;
 			continue;
 		} else if(*str == '\n') {
 			gx = tx;
@@ -1318,12 +1523,12 @@ void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, int scale, con
 			continue;
 		}
 
-		const char *glyph = &font->glyphs[(*str)*font->glyph_width*font->glyph_height];
+		const char* glyph = &font->glyphs[(*str) * font->glyph_width * font->glyph_height];
 
 		int char_offset_x = 0;
 		int char_w = font->glyph_width;
 
-		if(1 && font->geometry) {
+		if(font->geometry) {
 			smol_font_hor_geometry_t geom = font->geometry[*str];
 			char_w = geom.width+1;
 			char_offset_x = geom.offset_x;
@@ -1337,10 +1542,14 @@ void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, int scale, con
 		int sx = char_offset_x*scale;
 		int sy = 0;
 
-		if(l < rect.left) sx += (rect.left - l) / scale, l = rect.left;
-		if(t < rect.top) sy = (rect.top - t) / scale, t = rect.top;
-		if(r >= rect.right) r = rect.right;
-		if(b >= rect.bottom) b = rect.bottom;
+		if(l < rect.left) 
+			sx += (rect.left - l) / scale, l = rect.left;
+		if(t < rect.top) 
+			sy = (rect.top - t) / scale, t = rect.top;
+		if(r >= rect.right) 
+			r = rect.right;
+		if(b >= rect.bottom) 
+			b = rect.bottom;
 
 		for(int dy = t, vy = sy; dy < b; ++dy, ++vy)
 		for(int dx = l, vx = sx; dx < r; ++dx, ++vx) 
@@ -1355,7 +1564,7 @@ void smol_canvas_draw_text(smol_canvas_t* canvas, int tx, int ty, int scale, con
 
 		}
 
-		gx += (int)((font->geometry[*str].width+2ull)*scale);
+		gx += font->geometry ? (int)((font->geometry[*str].width+2ull)*scale) : char_w*scale;
 
 	}
 }
@@ -1391,8 +1600,8 @@ void smol_text_size(smol_canvas_t* canvas, int scale, const char* str, int* w, i
 				y += font->glyph_height * scale;
 			break;
 			case ' ': x += font->geometry['_'].width; break;
-			case '\t': x += font->geometry['_'].width * 2; break;
-			default: x += (font->geometry[*s].width+2); break;
+			case '\t': x += font->geometry['_'].width * 4; break;
+			default: x += (font->geometry[*s].width + 2); break;
 		}
 		
 		*w = (x > *w) ? x : *w;
