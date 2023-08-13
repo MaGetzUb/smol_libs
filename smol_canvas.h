@@ -209,6 +209,9 @@ SMOL_INLINE smol_pixel_t smol_hsva(smol_u16 hue, smol_byte sat, smol_byte val, s
 
 }
 
+
+smol_font_t* smol_load_default_font();
+
 //smol_image_create_advanced - Creates an image, allocates buffer if no buffer is provided. Clears also the newly allocated buffer with color.
 // Arguments:
 // - smol_u32 width       -- Width of the new pixel buffer, or or existing one
@@ -752,13 +755,29 @@ static const char BUILTIN_FONT_GEOM_BLOB[] =
 
 #define FIRST_VISIBLE_SYMBOL '!'
 
-SMOL_INLINE int smol_from_base64(char c) {
-	if(c >= 'A' && c <= 'Z') return (c - 'A') +  0;
-	if(c >= 'a' && c <= 'z') return (c - 'a') + 26;
-	if(c >= '0' && c <= '9') return (c - '0') + 52;
-	if(c == '+') return 62;
-	if(c == '/') return 63;
-	return 0;
+
+#define smol_from_base64(c) ( \
+	(((c) >= 'A' && (c) <= 'Z')*(0  + ((c) - 'A'))) + \
+	(((c) >= 'a' && (c) <= 'z')*(26 + ((c) - 'a'))) + \
+	(((c) >= '0' && (c) <= '9')*(52 + ((c) - '0'))) + \
+	(((c) == '+') * 62) + \
+	(((c) == '/') * 63) \
+)
+
+smol_size_t smol_base64_decode(const char* input, smol_size_t input_length, char* output, smol_size_t output_length) {
+	smol_size_t decoded = 0;
+	for(smol_size_t i = 0; i < input_length; i+=4) {
+		smol_u32 data = (
+			smol_from_base64(input[i+0]) << 18 |
+			smol_from_base64(input[i+1]) << 12 |
+			smol_from_base64(input[i+2]) <<  6 |
+			smol_from_base64(input[i+3]) <<  0
+		);
+		for(int j = 16; j >= 0 && decoded < output_length; j -= 8) {
+			output[decoded++] = (data >> j) & 0xFF;
+		}
+	}
+	return decoded;
 }
 
 smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
@@ -780,85 +799,66 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 	smol_rect_t scissor = { 0, 0, width, height };
 	smol_stack_push_immediate(&canvas.scissor_stack, scissor);
 
-	//This default font stuff is bit hacky.. Maybe there should be some sort of base64 decoder... 
-	if(smol__builtin_font_refs == 0) {
+	smol_font_t* font = smol_load_default_font();
+	smol_stack_push(&canvas.font_stack, &font);
 
-		smol__default_font.glyph_width = SMOL_BUILTIN_FONT_WIDTH;
-		smol__default_font.glyph_height = SMOL_BUILTIN_FONT_HEIGHT;
-		smol__default_font.geometry = NULL;
+
+	return canvas;
+}
+
+smol_font_t* smol_load_default_font() {
+
+	if(smol__builtin_font_refs)
+		return &smol__default_font;
+	char bitstream[(94 * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT) / 8] = { 0 };
+
+	smol__default_font.glyph_width = SMOL_BUILTIN_FONT_WIDTH;
+	smol__default_font.glyph_height = SMOL_BUILTIN_FONT_HEIGHT;
 	
-		int num_glyph_pixels = smol__default_font.glyph_width * smol__default_font.glyph_height;;
+	int num_glyph_pixels = smol__default_font.glyph_width * smol__default_font.glyph_height;;
 
-		int data_size = smol__default_font.glyph_width * smol__default_font.glyph_height * PXF_NUM_PRINTABLE_GLYPHS;
-		int alloc_size = smol__default_font.glyph_width * smol__default_font.glyph_height * 128;
+	int data_size = smol__default_font.glyph_width * smol__default_font.glyph_height * PXF_NUM_PRINTABLE_GLYPHS;
+	int alloc_size = smol__default_font.glyph_width * smol__default_font.glyph_height * 128;
 
-		int size = 128 * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
-		smol__builtin_font_data = memset(malloc(size), 0, size);
-		smol__builtin_geom_data = memset(malloc(128 * 2), 0, 128*2);
+	int size = 128 * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
+	smol__builtin_font_data = memset(malloc(size), 0, size);
+	smol__builtin_geom_data = memset(malloc(128 * 2), 0, 128*2);
 
-		char* glyph_data = smol__builtin_font_data;
-		smol__default_font.glyphs = smol__builtin_font_data;
+	char* glyph_data = smol__builtin_font_data;
+	smol__default_font.glyphs = smol__builtin_font_data;
 
 		
 
-		int offset = FIRST_VISIBLE_SYMBOL * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
+	int offset = FIRST_VISIBLE_SYMBOL * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
+	{
+		smol_size_t s = smol_base64_decode(SMOL_BUILTIN_FONT_BLOB, sizeof(SMOL_BUILTIN_FONT_BLOB) - 1, bitstream, sizeof(bitstream));
+		static const int data_offset = FIRST_VISIBLE_SYMBOL * SMOL_BUILTIN_FONT_WIDTH * SMOL_BUILTIN_FONT_HEIGHT;
 
-
-		const char* data = SMOL_BUILTIN_FONT_BLOB;
 		int index = 0;
-		smol_u32 val = 0;
-		int bits = 0;
-
-		for(int i = 0;; i++) {
-			smol_u32 bits = 
-				smol_from_base64(data[0]) << 0x12 |
-				smol_from_base64(data[1]) << 0x0C | 
-				smol_from_base64(data[2]) << 0x06 | 
-				smol_from_base64(data[3]) << 0x00
-			;
-			for(int j = 0; j < 24 && index < data_size; j++) {
-			
-				int pix = (bits & (0x800000 >> j)) > 0;
-	
-				glyph_data[offset + index++] = pix;
-
-				char title[2] = { FIRST_VISIBLE_SYMBOL + (index / num_glyph_pixels), 0 };
-			}
-
-			if(index >= data_size)
-				break;
-
-			data += 4;
-		}
-
-		smol_font_t* font[] = { &smol__default_font };
-		smol__default_font.geometry = smol__builtin_geom_data;
-		data = BUILTIN_FONT_GEOM_BLOB;
-		int geoms = 0;
 		for(int i = 0; i < PXF_NUM_PRINTABLE_GLYPHS; i++) {
-			smol_u32 bits = 
-				smol_from_base64(data[0]) << 0x12 |
-				smol_from_base64(data[1]) << 0x0C | 
-				smol_from_base64(data[2]) << 0x06 | 
-				smol_from_base64(data[3]) << 0x00
-			;
-			
-			for(int i = 16; i >= 0; i-=8) {
-				smol__builtin_geom_data[FIRST_VISIBLE_SYMBOL*2+geoms++] = (smol_u8)(((bits) >> i) & 0xFF);
-				if(geoms > PXF_NUM_PRINTABLE_GLYPHS * 2)
-					goto exit;
+			for(int j = 0; j < SMOL_BUILTIN_FONT_HEIGHT; j++)
+			for(int k = 0; k < SMOL_BUILTIN_FONT_WIDTH; k++)
+			{
+				smol_u8 mask = 0x80 >> (index % 8);
+				smol__builtin_font_data[data_offset + index] = ((bitstream[index / 8] & mask) != 0);
+				index++;
 			}
-			
-			data += 4;
 		}
-		exit:
-
-
-		smol_stack_push(&canvas.font_stack, font);
-		smol__builtin_font_refs++;
 	}
 
-	return canvas;
+	{
+		smol_size_t s = smol_base64_decode(BUILTIN_FONT_GEOM_BLOB, sizeof(BUILTIN_FONT_GEOM_BLOB) - 1, bitstream, PXF_NUM_PRINTABLE_GLYPHS * 2);
+		static const int data_offset = FIRST_VISIBLE_SYMBOL * 2;
+
+		for(int i = 0; i < PXF_NUM_PRINTABLE_GLYPHS; i++) {
+			smol__builtin_geom_data[data_offset + i*2] = bitstream[i * 2];
+			smol__builtin_geom_data[data_offset + i*2+1] = bitstream[i * 2 + 1];
+		}
+		smol__default_font.geometry = smol__builtin_geom_data;
+		
+	}
+
+	return &smol__default_font;
 }
 
 void smol_canvas_set_color(smol_canvas_t* canvas, smol_pixel_t color) {
