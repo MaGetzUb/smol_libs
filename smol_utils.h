@@ -351,9 +351,10 @@ struct { \
 // - vec -- The vector to be appended 
 // - value -- The element to be added
 #define smol_vector_push(vec, value) { \
-	if((vec)->count >= (vec)->allocation) \
+	if((vec)->count >= (vec)->allocation) { \
 		(vec)->allocation *= 2; \
 		(vec)->data = SMOL_REALLOC((vec)->data, sizeof(*((vec)->data)) * (vec)->allocation ); \
+	} \
 	(vec)->data[(vec)->count++] = value; \
 } (void)0
 
@@ -428,13 +429,23 @@ struct { \
 //smol_span_init_from_slice - Initializes span from "span_like" object (vector for example)
 //Arguments:
 // - span -- The span you're initializing
-// - span_like -- The data youre basing this span on
+// - span_like -- The data you're basing this span on
 // - first_element -- Index of the first element
 // - element_count -- Number of elements this span should contain
 #define smol_span_init_from_slice(span, span_like, first_element, element_count) { \
 	(span)->count = (element_count); \
 	(span)->data = &(span_like)->data[first_element]; \
 } (void)0
+
+//smol_span_init_from_spanlike - Initializes span from "span_like" object (vector / span)
+//Arguments:
+// - span -- The span you're initializing
+// - span_like -- The data you're basing this span on
+#define smol_span_init_from_spanlike(span, span_like) { \
+	(span)->count = (span_like)->count; \
+	(span)->data = &(span_like)->data[0]; \
+} (void)0
+
 
 //smol_span_count - "Returns" the number of elements in the span
 //Arguments:
