@@ -288,7 +288,7 @@ SMOL_INLINE double smol_clampd(double v, double low, double high) {
 // - float e1           -- The edge1
 // - float value        -- The value remapped, normalized and clamped.
 //Returns: float - containing the value between [0..1]
-SMOL_INLINE smol_linear_stepf(float e0, float e1, float value) {
+SMOL_INLINE float smol_linear_stepf(float e0, float e1, float value) {
 	return smol_clampf((value - e0) / (e1 - e0), 0.f, 1.f);
 }
 
@@ -298,7 +298,7 @@ SMOL_INLINE smol_linear_stepf(float e0, float e1, float value) {
 // - double e1           -- The edge1
 // - double value        -- The value remapped, normalized and clamped.
 //Returns: double - containing the value between [0..1]
-SMOL_INLINE smol_linear_stepd(double e0, double e1, double value) {
+SMOL_INLINE double smol_linear_stepd(double e0, double e1, double value) {
 	return smol_clampd((value - e0) / (e1 - e0), 0., 1.);
 }
 
