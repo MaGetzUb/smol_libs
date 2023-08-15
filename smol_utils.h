@@ -156,6 +156,20 @@ int smol_utf16_to_utf8(const unsigned short* utf16, int buf_len, char* utf8);
 //Returns: int                      -- number of utf16 symbols written
 int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16);
 
+/* ---------------------------------------------- */
+/* A SORTING UTILITITY BECAUSE QSORT WON'T CUT IT */
+/* ---------------------------------------------- */
+
+typedef int(*smol_sort_proc)(const void* a, const void* b, void* user_data);
+
+void smol_sort(void* data, int num_elements, int element_size, smol_sort_proc compare, void* user_data);
+
+#define smol_sort_array_user(data, compare, user_data) smol_sort(data, sizeof(data) / sizeof(*data), sizeof(*data), compare, user_data)
+#define smol_sort_array(data, compare) smol_sort_array_user(data, compare, NULL)
+
+#define smol_sort_vector_user(vec, compare, user_data) smol_sort((void*)((vec)->data), (vec)->count, sizeof(*(vec)->data), compare, user_data)
+#define smol_sort_vector(vec, compare) smol_sort_vector_user(vec, compare, NULL)
+
 /* --------------------------------------- */
 /* A RANDOM NUMBER GENERATOR FUNCTIONALITY */
 /* --------------------------------------- */
@@ -339,7 +353,10 @@ struct { \
 	type* data; \
 }
 
-//smol_vector_init - 
+//smol_vector_init - Init a vector
+//Arguments:
+// - vec -- The vector to be initialized
+// - init_alloc -- The initial allocation of the vector
 #define smol_vector_init(vec, init_alloc) { \
 	(vec)->allocation = init_alloc; \
 	(vec)->count = 0; \
@@ -355,6 +372,7 @@ struct { \
 		(vec)->allocation *= 2; \
 		(vec)->data = SMOL_REALLOC((vec)->data, sizeof(*((vec)->data)) * (vec)->allocation ); \
 	} \
+	SMOL_ASSERT((vec)->data); \
 	(vec)->data[(vec)->count++] = value; \
 } (void)0
 
@@ -365,19 +383,31 @@ struct { \
 //Returns: type* - Containing the buffer pointer to be indexed in
 #define smol_vector_iterate(vec, it) \
 	(vec)->data; \
+	SMOL_ASSERT((vec)->data); \
 	for(int it = 0; it < (vec)->count; it++)
+
+//smol_vector_each - Iterates over each element
+//Arguments:
+// - vec - The vector to be iterated over
+// - element_type - A type of individual element in the vector (MSVC doesn't have __typeof__ *sigh*)
+// - it - Iterator variable name
+#define smol_vector_each(vec, element_type, it) \
+	for(element_type* it = (vec)->data; it != &(vec)->data[(vec)->count]; it++) 
 
 //smol_vector_clear - Clears the vector
 //Arguments: 
 // - vec -- The vector to be cleared
-#define smol_vector_clear(vec) \
-	(vec)->count = 0
+#define smol_vector_clear(vec) { \
+	SMOL_ASSERT((vec)->data); \
+	((vec)->count = 0); \
+} (void)0
 
 //smol_vector_remove - Removes an element from the vector, by overwriting it with the last element, and decreasing vector size
 //Arguments: 
 // - vec -- The vector to remove element from
 // - element - The element index to be removed
 #define smol_vector_remove(vec, element) { \
+	SMOL_ASSERT((vec)->data); \
 	(vec)->data[element] = (vec)->data[--(vec)->count]; \
 } (void)0
 
@@ -386,24 +416,24 @@ struct { \
 // - vec -- The vector you want count of
 //Returns int - containing the number of elements in the vector
 #define smol_vector_count(vec) \
-	(vec)->count
+	((vec)->count)
 
 //smol_vector_data - "Returns" the data buffer of the vector
 // - vector -- The span you want the data of
 //Returns type* - containing the pointer to the vector data
 #define smol_vector_data(vec) \
-	(vec)->data
+	((vec)->data)
 
 //smol_span_at - "Returns" an element of the vector. NOT BOUNDS CHECKED.
 // - vec -- The vector you want the element of
 // - index -- The index of the element
 //Returns type - containing the element at index
 #define smol_vector_at(vec, index) \
-	(vec)->data[index]
+	((vec)->data[index])
 
 //Frees a vector, and sets it's allocation and count to zero
 #define smol_vector_free(vec) { \
-	SMOL_FREE((void*)(vec)); \
+	SMOL_FREE((void*)(vec)->data); \
 	(vec)->count = 0; \
 	(vec)->allocation = 0; \
 } (void)0
@@ -452,21 +482,21 @@ struct { \
 // - span -- The span you want count of
 //Returns int - containing the number of elements in the span
 #define smol_span_count(span_like) \
-	(span)->count
+	((span_like)->count)
 
 
 //smol_span_data - "Returns" the data buffer of the span
 // - span -- The span you want the data of
 //Returns type* - containing the pointer to the span data
 #define smol_span_data(span_like) \
-	(span)->data
+	((span_like)->data)
 
 //smol_span_at - "Returns" an element of the span. NOT BOUNDS CHECKED.
 // - span -- The span you want the element of
 // - index -- The index of the element
 //Returns type - containing the element at index
 #define smol_span_at(span_like, index) \
-	(span)->data[index]
+	((span_like)->data[index])
 
 /* ------------------------------ */
 /* SOME FILE SYSTEM FUNCTIONALITY */
@@ -684,9 +714,53 @@ int smol_utf8_to_utf16(const char* utf8, int buf_len, unsigned short* utf16) {
 
 #pragma endregion
 
+#pragma region Sorting utilities
+
+
+void smol_sort(void* data, int num_elements, int element_size, smol_sort_proc compare, void* user_data) {
+
+	char* first = ((char*)data);
+	char* last =  first + (num_elements * element_size);
+
+#ifdef _MSC_VER
+#define SMOL_SORT_SWAP(a, b) { \
+	char* tmp = alloca(element_size); \
+	memcpy((void*)tmp, (const void*)a, element_size); \
+	memcpy((void*)a, (const void*)b, element_size); \
+	memcpy((void*)b, (const void*)tmp, element_size); \
+}
+#else 
+#define SMOL_SORT_SWAP(a, b) { \
+	char tmp[element_size]; \
+	memcpy(tmp, a, element_size); \
+	memcpy(a, b, element_size); \
+	memcpy(b, tmp, element_size); \
+}
+#endif 
+
+	if((last - first) > element_size) {
+		char* part_idx = first;
+		{
+			char* pivot = last - element_size;
+			for(char* it = first; it != last; it += element_size) {
+				if(compare((const void*)pivot, (const void*)it, user_data) > 0) {
+					SMOL_SORT_SWAP(part_idx, it);
+					part_idx += element_size;
+				}
+			}
+			SMOL_SORT_SWAP(part_idx, pivot);
+		}
+		smol_sort((void*)first, (part_idx - first) / element_size, element_size, compare, user_data);
+		smol_sort((void*)(part_idx + element_size), (last - (part_idx + element_size)) / element_size, element_size, compare, user_data);
+	}
+#undef SMOL_SORT_SWAP
+}
+
+#pragma endregion
+
 
 #pragma region Linear Congruential PRNG
-unsigned int smol__rand_state;
+static unsigned int smol__rand_state;
 
 void smol_randomize(unsigned int seed) {
 	smol__rand_state = seed;

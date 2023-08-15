@@ -491,6 +491,13 @@ void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame);
 //Returns: smol_image_t - The result image
 smol_image_t smol_load_image_qoi(const char* file_path);
 
+//smol_load_image_qoi - Loads a qoi image from memory
+// Arguments:
+// - const char* buffer -- A pointer to buffer
+// - smol_size_t        -- Length of a buffer
+//Returns: smol_image_t - The result image
+smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length);
+
 //Blend functions
 //smol_pixel_blend_overwrite - Over writes a pixel in the destination
 // Arguments:
@@ -1642,47 +1649,74 @@ void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame) {
 }
 #endif 
 
+
 //https://qoiformat.org/qoi-specification.pdf
 smol_image_t smol_load_image_qoi(const char* file_path) {
 
-	smol_image_t result = { 0 };
-	FILE* file = NULL;
-#ifndef _CRT_SECURE_NO_WARNINGS
-	fopen_s(&file, file_path, "rb");
+	void* buffer = NULL;
+	smol_size_t size = 0;
+	smol_image_t res = { 0 };
+#ifdef SMOL_UTILS_H
+	buffer = smol_read_entire_file(file_path, &size);
 #else 
-	file = fopen(file_path, "rb");
+	FILE* f = fopen(file_path, "r");
+	if(!f)
+		return res;
+
+
+	fseek(f, 0, SEEK_END);
+	size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	buffer = malloc(size);
+	fread(buffer, 1, size, f);
+	fclose(f);
+
 #endif 
 
-	if(!file) {
-		fprintf(stderr, "Unable to open file '%s'!\n", file_path);
-		return result;
+	if(!buffer) {
+		printf("Couldn't load qoi from file '%s'!", file_path);
+		return res;
 	}
 
-	result.free_func = &free;
+	res = smol_load_image_qoi_from_memory(buffer, size);
+	return res;
+}
 
-	/* HEADER */
-	char magic[4] = { 0 };
+smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length) {
+
+	smol_image_t res = { 0 };
+
+	const smol_u8* data = (const char*)buffer;
+#define PEEK_BYTES(ptr, count) memcpy(ptr, (const void*)data, count) 
+#define READ_BYTES(ptr, count) PEEK_BYTES(ptr, count), data += count
+#define GET_CHAR() ((data - buffer) < length ? (*data++) : -1)
+#define SEEK_CUR(dir) (data += dir)
+
+
+#define BSWAP32(value) ( \
+	((value & 0xFF000000) >> 0x18) | \
+	((value & 0x00FF0000) >> 0x08) | \
+	((value & 0x0000FF00) << 0x08) | \
+	((value & 0x000000FF) << 0x18) \
+)
+
+
+	smol_u32 header;
 	smol_u32 width;
 	smol_u32 height;
 	smol_u8  num_channels;
 	smol_u8  color_space;
+	
+	READ_BYTES(&header, 4);
+	
+	if(BSWAP32(header) != 'qoif')
+		return res;
 
-	fread(magic, 1, 4, file);
-	if(*((smol_u32*)&magic[0]) != 'fioq')
-		return result;
-
-	fread(&width, 1, 4, file);
-	fread(&height, 1, 4, file);
-	fread(&num_channels, 1, 1, file);
-	fread(&color_space, 1, 1, file);
-
-#define BSWAP32(value) ( \
-	((value & 0xFF000000) >> 24) | \
-	((value & 0xFF0000) >> 8) | \
-	((value & 0xFF00) << 8) | \
-	(value << 24) \
-)
-
+	READ_BYTES(&width, 4);
+	READ_BYTES(&height, 4);
+	READ_BYTES(&num_channels, 1);
+	READ_BYTES(&color_space, 1);
 
 	width  = BSWAP32(width);
 	height = BSWAP32(height);
@@ -1697,25 +1731,25 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 
 		smol_pixel_t pixel_hashtable[64] = { 0 };
 		smol_pixel_t last_pixel = SMOLC_BLACK;
-#define HASH_RGBA(r, g, b, a) (r*3 + g*5 + b*7 + a*11) & 0x3F
-#define STORE_PIXEL(hash, color) pixel_hashtable[hash] = color
-#define HASH_STORE_PIXEL(color) STORE_PIXEL(HASH_RGBA(color.r, color.g, color.b, color.a), color)
+		#define HASH_RGBA(r, g, b, a) (r*3 + g*5 + b*7 + a*11) & 0x3F
+		#define STORE_PIXEL(hash, color) pixel_hashtable[hash] = color
+		#define HASH_STORE_PIXEL(color) STORE_PIXEL(HASH_RGBA(color.r, color.g, color.b, color.a), color)
 
 		for(;;) {
-			smol_u8 tag = fgetc(file);
+			smol_u8 tag = GET_CHAR();
 
 			switch(tag) {
 				case 0x00: {
-					char byte = fgetc(file);
+					char byte =  GET_CHAR();
 					if(byte == 0x1)
 						goto end; //End of file
-					fseek(file, -1, SEEK_CUR);
+					SEEK_CUR(-1);
 				} break;
 				case 0xFE: { //RGB
 
 					smol_u8 rgb[3];
 					smol_u32 index;
-					fread(rgb, 1, 3, file);
+					READ_BYTES(rgb, 3);
 
 					index = HASH_RGBA(rgb[0], rgb[1], rgb[2], 255);
 					smol_pixel_t new_pixel = smol_rgba( rgb[0], rgb[1], rgb[2], 255 );
@@ -1728,7 +1762,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 				case 0xFF: { //RGBA
 					smol_u8 rgba[4];
 					smol_u32 index;
-					fread(rgba, 1, 4, file);
+					READ_BYTES(rgba, 4);
 
 					index = HASH_RGBA(rgba[0], rgba[1], rgba[2], rgba[3]);
 					smol_pixel_t new_pixel = smol_rgba( rgba[0], rgba[1], rgba[2], rgba[3] );
@@ -1767,7 +1801,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 				} continue;
 				case 2: { //Luma
 					//Seems to work
-					smol_u8 next_byte = fgetc(file);
+					smol_u8 next_byte = GET_CHAR();
 					
 					char dg = (tag & 0x3F) - 32;
 					char dr = dg + ((next_byte >> 4) & 0xF) - 8;
@@ -1794,19 +1828,22 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 			}
 
 		}
+#undef HASH_STORE_PIXEL
+#undef STORE_PIXEL
+#undef HASH_RGBA
 	}
 	end:
 	
-	result = smol_image_create_from_buffer(width, height, pixel_data);
-	result.free_func = free;
-
-#undef HASH_RGBA
-#undef STORE_PIXEL
+	res = smol_image_create_from_buffer(width, height, pixel_data);
+	res.free_func = free;
 #undef BSWAP32
 
-	fclose(file);
+#undef GET_CHAR
+#undef PEEK_BYTES
+#undef READ_BYTES
 
-	return result;
+	return res;
+
 }
 
 #endif 
