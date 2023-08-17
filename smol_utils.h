@@ -360,7 +360,7 @@ struct { \
 #define smol_vector_init(vec, init_alloc) { \
 	(vec)->allocation = init_alloc; \
 	(vec)->count = 0; \
-	(vec)->data = SMOL_ALLOC(sizeof(*((vec)->data))*init_alloc); \
+	((void*)((vec)->data)) = SMOL_ALLOC(sizeof(*((vec)->data))*init_alloc); \
 } (void)0
 
 //smol_vector_push - Pushes an object into a vector
@@ -370,11 +370,42 @@ struct { \
 #define smol_vector_push(vec, value) { \
 	if((vec)->count >= (vec)->allocation) { \
 		(vec)->allocation *= 2; \
-		(vec)->data = SMOL_REALLOC((vec)->data, sizeof(*((vec)->data)) * (vec)->allocation ); \
+		((void*)(vec)->data) = SMOL_REALLOC((vec)->data, sizeof(*((vec)->data)) * (vec)->allocation ); \
 	} \
 	SMOL_ASSERT((vec)->data); \
 	(vec)->data[(vec)->count++] = value; \
 } (void)0
+
+//smol_vector_resize - Resizes a vector
+//Arguments:
+// - vec -- The vector to be resized
+// - size -- The new size of the vector
+#define smol_vector_resize(vec, size) { \
+	if(size >= (vec)->allocation) { \
+		(vec)->allocation = ((size / (vec)->allocation)+1)*(vec)->allocation; \
+		((void*)(vec)->data) = SMOL_REALLOC((vec)->data, sizeof(*((vec)->data)) * (vec)->allocation); \
+	} \
+	(vec)->count = size; \
+} (void)0
+
+//smol_vector_pop - Pops the last object from the vector
+//Arguments: 
+// - vec -- The vector to be popped from
+//Returns type - containing the last object in the vector
+#define smol_vector_pop(vec) \
+	(vec)->data[--((vec)->count)]
+
+//smol_vector_front - Returns the front element of the vector
+// - vec -- The vector to get the first element from
+//Returns type - containing the first object in the vector
+#define smol_vector_front(vec) \
+	(vec)->data[0]
+
+//smol_vector_front - Returns the last element of the vector
+// - vec -- The vector to get the last element from
+//Returns type - containing the last object in the vector
+#define smol_vector_back(vec) \
+	(vec)->data[(vec)->count-1]
 
 //smol_vector_iterate - Iterates over vector elements
 //Arguments: 
@@ -392,7 +423,7 @@ struct { \
 // - element_type - A type of individual element in the vector (MSVC doesn't have __typeof__ *sigh*)
 // - it - Iterator variable name
 #define smol_vector_each(vec, element_type, it) \
-	for(element_type* it = (vec)->data; it != &(vec)->data[(vec)->count]; it++) 
+	for(element_type* it = (vec)->data; (vec)->data && it != &((vec)->data[(vec)->count]); it++) 
 
 //smol_vector_clear - Clears the vector
 //Arguments: 
@@ -433,7 +464,10 @@ struct { \
 
 //Frees a vector, and sets it's allocation and count to zero
 #define smol_vector_free(vec) { \
-	SMOL_FREE((void*)(vec)->data); \
+	if((vec)->data) { \
+		SMOL_FREE((void*)(vec)->data); \
+		(vec)->data = NULL; \
+	} \
 	(vec)->count = 0; \
 	(vec)->allocation = 0; \
 } (void)0
@@ -464,7 +498,7 @@ struct { \
 // - element_count -- Number of elements this span should contain
 #define smol_span_init_from_slice(span, span_like, first_element, element_count) { \
 	(span)->count = (element_count); \
-	(span)->data = &(span_like)->data[first_element]; \
+	(span)->data = &((span_like)->data[first_element]); \
 } (void)0
 
 //smol_span_init_from_spanlike - Initializes span from "span_like" object (vector / span)
@@ -473,7 +507,7 @@ struct { \
 // - span_like -- The data you're basing this span on
 #define smol_span_init_from_spanlike(span, span_like) { \
 	(span)->count = (span_like)->count; \
-	(span)->data = &(span_like)->data[0]; \
+	(span)->data = &((span_like)->data[0]); \
 } (void)0
 
 
@@ -483,7 +517,6 @@ struct { \
 //Returns int - containing the number of elements in the span
 #define smol_span_count(span_like) \
 	((span_like)->count)
-
 
 //smol_span_data - "Returns" the data buffer of the span
 // - span -- The span you want the data of
@@ -497,6 +530,116 @@ struct { \
 //Returns type - containing the element at index
 #define smol_span_at(span_like, index) \
 	((span_like)->data[index])
+
+/* ---------------------- */
+/*       QUEUE STUFF      */
+/* -----------------------*/
+
+
+//This macro can be used to define a queue type, or for local variable similarily as smol_vector() macro works.
+#define smol_queue(type) \
+struct { \
+	int allocation; \
+	int first; \
+	int last; \
+	type* data; \
+}
+
+//smol_queue_init - Initializes a queue with initial allocation
+//Arguments:
+// - queue -- The queue variable to be initialized
+// - initial_alloc -- The initial allocation of the queue
+#define smol_queue_init(queue, initial_alloc) { \
+	(queue)->allocation = initial_alloc; \
+	(void*)((queue)->data) = SMOL_ALLOC(sizeof(*((queue)->data))*initial_alloc); \
+	(queue)->first = 0; \
+	(queue)->last = 0; \
+} (void)0
+
+//smol_queue_free - Frees a queue
+// - queue - The queue to be deallocated
+#define smol_queue_free(queue) {\
+	if((queue)->data) SMOL_FREE((void*)((queue)->data)); \
+	(queue)->allocation = 0; \
+	(queue)->first = 0; \
+	(queue)->last = 0; \
+} (void)0
+
+//smol_queue_clear - Clears a queue
+//Arguments:
+// - queue -- The queue to be cleared
+#define smol_queue_clear(queue) { \
+	((queue)->first = (queue)->last = 0); \
+} (void)0
+
+//smol_queue_count - Gets the number of elements in the queue
+//Arguments:
+// - queue -- The queue which element count is wanted
+//Returns int - Containing number of items in the queue
+#define smol_queue_count(queue) \
+	((queue)->last - (queue)->first)
+
+//smol_queue_push_back - Pushes a new element to the back of the queue
+//Arguments:
+// - queue -- The target queue
+// - value -- The value to be pushed
+#define smol_queue_push_back(queue, value) { \
+	if(smol_queue_count(queue) >= (queue)->allocation) { \
+		(queue)->allocation <<= 1; \
+		(void*)((queue)->data) = SMOL_REALLOC((void*)((queue)->data), sizeof(*((queue)->data))*(queue)->allocation); \
+	} \
+	(queue)->data[((queue)->allocation + (queue)->last++) % (queue)->allocation] = value; \
+} (void)0
+
+//smol_queue_push_back - Pushes a new element in the front of the queue
+//Arguments:
+// - queue -- The target queue
+// - value -- The value to be pushed
+#define smol_queue_push_front(queue, value) { \
+	if(smol_queue_count(queue) >= (queue)->allocation) { \
+		(queue)->allocation <<= 1; \
+		(void*)((queue)->data) = SMOL_REALLOC((void*)((queue)->data), sizeof(*((queue)->data))*(queue)->allocation); \
+	} \
+	(queue)->data[((queue)->allocation + (queue)->first) % (queue)->allocation] = value; \
+} (void)0
+
+//smol_queue_at -- Get the element from wanted index of the queue
+//Arguments:
+// - queue -- The queue from which element is wanted
+// - index -- The number of the element.
+//Returns type - containing the element at wanted index 
+#define smol_queue_at(queue, index) \
+	((queue)->data[((queue)->allocation + (queue)->first + index)  % (queue)->allocation])
+
+//smol_queue_pop_front -- Pops an element from the queue
+//Arguments: 
+// - queue -- The queue from which front element is popped
+//Returns type - containing the element from in front of the queue
+#define smol_queue_pop_front(queue) \
+	((queue)->data[((queue)->allocation + (queue)->first++) % (queue)->allocation]); \
+	if((queue)->first == (queue)->last) ((queue)->first = (queue)->last = 0)
+
+//smol_queue_pop_front -- Pops an element from the queue
+//Arguments: 
+// - queue -- The queue from which front element is popped
+//Returns type - Containing the element from the back of the queue
+#define smol_queue_pop_back(queue) \
+	((queue)->data[((queue)->allocation + --(queue)->last) % (queue)->allocation]); \
+	if((queue)->first == (queue)->last) ((queue)->first = (queue)->last = 0)
+
+//smol_queue_front - Get the first element of the queue
+//Arguments: 
+// - queue -- The queue which front element is wanted
+//Returns type - Containing the front element of the queue
+#define smol_queue_front(queue) \
+	((queue)->data[((queue)->allocation + (queue)->first) % (queue)->allocation])
+
+//smol_queue_front - Get the last element of the queue
+//Arguments: 
+// - queue -- The queue which back element is wanted
+//Returns type - Containing the back element of the queue
+#define smol_queue_back(queue) \
+	((queue)->data[((queue)->allocation + ((queue)->last - 1)) % (queue)->allocation])
 
 /* ------------------------------ */
 /* SOME FILE SYSTEM FUNCTIONALITY */
