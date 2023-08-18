@@ -1,5 +1,6 @@
 visualstudio/
 .vscode/
+.vs/
 build/
 out/
 *.pdb
