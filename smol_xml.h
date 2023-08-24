@@ -210,20 +210,76 @@ typedef struct _smol_xml_node_t {
 typedef smol_vector(smol_xml_node_t) smol_xml_node_vector_t;
 typedef smol_vector(smol_xml_node_t*) smol_xml_nodeptr_vector_t;
 
+typedef int (*smol_xml_matcher_cb)(const char*);
+
 typedef struct _smol_xml_t {
 	smol_xml_node_vector_t nodes;
 	smol_xml_attr_vector_t header_attributes;
 } smol_xml_t;
 
-typedef int (*smol_xml_attr_matcher_cb)(const char*);
+typedef struct _smol_xml_matcher_t {
+	char* has_tag; // NULL = any
+	char* has_attr; // NULL = any
+	smol_xml_matcher_cb attr_value_matcher;
+} smol_xml_matcher_t;
 
+//smol_xml_parse - Parses a XML string
+//Arguments:
+// - const char* xml - The XML string (null-terminated)
+//Returns smol_xml_t - The XML document
 smol_xml_t smol_xml_parse(const char* xml);
+
+//smol_xml_free - Frees an XML document
 void smol_xml_free(smol_xml_t* xml);
 
+//smol_xml_get - Gets a XML node by ID
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - size_t id - The XML node ID
+//Returns smol_xml_node_t - A pointer to the XML node or NULL if it's invalid or doesn't exist
 smol_xml_node_t* smol_xml_get(smol_xml_t* xml, size_t id);
+
+//smol_xml_node_get_parent - Gets a XML node parent
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - smol_xml_node_t* node - The XML node
+//Returns smol_xml_node_t - A pointer to the XML node or NULL if it's invalid or doesn't exist
+smol_xml_node_t* smol_xml_node_get_parent(smol_xml_t* xml, smol_xml_node_t* node);
+
+//smol_xml_node_get_children - Gets the array os node pointers from a XML node's children array
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - smol_xml_node_t* node - The XML node
+// - smol_xml_nodeptr_vector_t* out - The output vector
+void smol_xml_node_get_children(smol_xml_t* xml, smol_xml_node_t* node, smol_xml_nodeptr_vector_t* out);
+
+//smol_xml_find_by_tag - Finds a list of XML nodes having a specific tag name
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - const char* tag - The tag name
+// - smol_xml_nodeptr_vector_t* out - The output vector
 void smol_xml_find_by_tag(smol_xml_t* xml, const char* tag, smol_xml_nodeptr_vector_t* out);
-void smol_xml_find_by_attr(smol_xml_t* xml, const char* attr_name, const char* attr_value, smol_xml_nodeptr_vector_t* out);
-void smol_xml_find_by_attr_matcher(smol_xml_t* xml, const char* attr_name, smol_xml_attr_matcher_cb matcher, smol_xml_nodeptr_vector_t* out);
+
+//smol_xml_find_one - Finds a single XML node meeting specific matcher conditions
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - smol_xml_node_t* node - The XML node
+// - const smol_xml_matcher_t* matcher - The matcher structure containing the conditions
+//Returns smol_xml_node_t - A pointer to the XML node or NULL if it's invalid or doesn't exist
+smol_xml_node_t* smol_xml_find_one(smol_xml_t* xml, const smol_xml_matcher_t* matcher);
+
+//smol_xml_find - Finds a list of XML nodes meeting specific matcher conditions
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - const smol_xml_matcher_t* matcher - The matcher structure containing the conditions
+// - smol_xml_nodeptr_vector_t* out - The output vector
+void smol_xml_find(smol_xml_t* xml, const smol_xml_matcher_t* matcher, smol_xml_nodeptr_vector_t* out);
+
+//smol_xml_get_header_attr - Gets an attribute from the XML header (<?xml ... ?>)
+//Arguments:
+// - smol_xml_t* xml - The XML document
+// - const char* attr_name - The name of the attribute
+//Returns smol_xml_attr_t - A pointer to the XML attribute or NULL if it's invalid or doesn't exist
 smol_xml_attr_t* smol_xml_get_header_attr(smol_xml_t* xml, const char* attr_name);
 
 typedef int (*read_test_cb_t)(char);
@@ -296,22 +352,26 @@ void smol_scanner_skip_spaces(smol_scanner_t* scanner) {
 	}
 }
 
-int _smol_value__is_number(const char* str) {
-	size_t len = strlen(str);
-	int is_num = 1;
-	for (size_t i = 0; i < len; i++) {
-		if (!isdigit(str[i])) {
-			if (str[i] == '.') continue;
-			is_num = 0;
+int _smol_xml__remove_comments(smol_scanner_t* scan) {
+	smol_scanner_skip_spaces(scan);
+	if (smol_scanner_has_ahead(scan, "<!--")) { // comment
+		while (!smol_scanner_has_ahead(scan, "-->")) {
+			smol_scanner_skip(scan);
 		}
+		smol_scanner_skip(scan);
+		smol_scanner_skip(scan);
+		smol_scanner_skip(scan);
+		return 1;
 	}
-	return is_num;
+	return 0;
 }
 
 smol_xml_attr_t _smol_xml__parse_attr(smol_scanner_t* scan) {
 	smol_xml_attr_t attr = { 0 };
 
 	smol_scanner_skip_spaces(scan);
+	_smol_xml__remove_comments(scan);
+
 	assert(_smol_test__id(smol_scanner_peek(scan, 0)) && "Invalid attribute name.");
 
 	attr.name = smol_scanner_read(scan, &_smol_test__id);
@@ -336,17 +396,9 @@ smol_xml_attr_t _smol_xml__parse_attr(smol_scanner_t* scan) {
 
 // parses a single node
 void _smol_xml__parse_node(size_t id, size_t parent, smol_scanner_t* scan, smol_xml_node_vector_t* out) {
-	smol_scanner_skip_spaces(scan);
+	if (_smol_xml__remove_comments(scan)) return;
 
-	if (smol_scanner_has_ahead(scan, "<!--")) { // comment
-		while (!smol_scanner_has_ahead(scan, "-->")) {
-			smol_scanner_skip(scan);
-		}
-		smol_scanner_skip(scan);
-		smol_scanner_skip(scan);
-		smol_scanner_skip(scan);
-		return;
-	}
+	smol_scanner_skip_spaces(scan);
 
 	// validate
 	if (smol_scanner_peek(scan, 0) != '<') return;
@@ -468,25 +520,53 @@ void smol_xml_find_by_tag(smol_xml_t* xml, const char* tag, smol_xml_nodeptr_vec
 	}
 }
 
-void smol_xml_find_by_attr(smol_xml_t* xml, const char* attr_name, const char* attr_value, smol_xml_nodeptr_vector_t* out) {
+smol_xml_node_t* smol_xml_find_one(smol_xml_t* xml, const smol_xml_matcher_t* matcher) {
+	SMOL_ASSERT(matcher != NULL);
+
 	smol_vector_each(&xml->nodes, smol_xml_node_t, node) {
+		int has_tag = matcher->has_tag ? (strcmp(node->tag, matcher->has_tag) == 0) : 1;
+		if (!has_tag) continue;
+
 		smol_vector_each(&node->attributes, smol_xml_attr_t, attr) {
-			if (strcmp(attr->name, attr_name) == 0 && strcmp(attr->value, attr_value) == 0) {
-				smol_vector_push(out, node);
-				break;
-			}
+			int has_attr = matcher->has_attr ? (strcmp(attr->name, matcher->has_attr) == 0) : 1;
+			if (!has_attr) continue;
+			if (!matcher->attr_value_matcher(attr->value)) continue;
+
+			return node;
+		}
+	}
+
+	return NULL;
+}
+
+void smol_xml_find(smol_xml_t* xml, const smol_xml_matcher_t* matcher, smol_xml_nodeptr_vector_t* out) {
+	SMOL_ASSERT(matcher != NULL);
+
+	smol_vector_each(&xml->nodes, smol_xml_node_t, node) {
+		int has_tag = matcher->has_tag ? (strcmp(node->tag, matcher->has_tag) == 0) : 1;
+		if (!has_tag) continue;
+
+		smol_vector_each(&node->attributes, smol_xml_attr_t, attr) {
+			int has_attr = matcher->has_attr ? (strcmp(attr->name, matcher->has_attr) == 0) : 1;
+			int matched = matcher->attr_value_matcher ? !matcher->attr_value_matcher(attr->value) : 1;
+			if (!has_attr) continue;
+			if (!matched) continue;
+			
+			smol_vector_push(out, node);
+			break;
 		}
 	}
 }
 
-void smol_xml_find_by_attr_matcher(smol_xml_t* xml, const char* attr_name, smol_xml_attr_matcher_cb matcher, smol_xml_nodeptr_vector_t* out) {
-	smol_vector_each(&xml->nodes, smol_xml_node_t, node) {
-		smol_vector_each(&node->attributes, smol_xml_attr_t, attr) {
-			if (strcmp(attr->name, attr_name) == 0 && matcher(attr->value)) {
-				smol_vector_push(out, node);
-				break;
-			}
-		}
+smol_xml_node_t* smol_xml_node_get_parent(smol_xml_t* xml, smol_xml_node_t* node) {
+	return smol_xml_get(xml, node->parent);
+}
+
+void smol_xml_node_get_children(smol_xml_t* xml, smol_xml_node_t* node, smol_xml_nodeptr_vector_t* out) {
+	smol_vector_each(&node->children, size_t, id) {
+		smol_xml_node_t* child = smol_xml_get(xml, id);
+		if (!child) continue;
+		smol_vector_push(out, child);
 	}
 }
 
@@ -519,7 +599,12 @@ void smol_xml_free(smol_xml_t* xml) {
 	smol_vector_each(&xml->nodes, smol_xml_node_t, node) {
 		smol_xml__node_free(node);
 	}
+	smol_vector_each(&xml->header_attributes, smol_xml_attr_t, attr) {
+		free(attr->name);
+		if (attr->value) free(attr->value);
+	}
 	smol_vector_free(&xml->nodes);
+	smol_vector_free(&xml->header_attributes);
 }
 
 #endif
