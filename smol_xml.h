@@ -195,27 +195,14 @@ typedef struct _smol_xml_attr_t {
 
 typedef smol_vector(smol_xml_attr_t) smol_xml_attr_vector_t;
 
-typedef struct _smol_xml_node_t {
-	size_t id;
-
-	char* tag;
-
-	smol_xml_attr_vector_t attributes;
-	char* body;
-
-	size_t parent;
-	smol_id_vector_t children;
-} smol_xml_node_t;
+typedef struct _smol_xml_node_t smol_xml_node_t;
 
 typedef smol_vector(smol_xml_node_t) smol_xml_node_vector_t;
 typedef smol_vector(smol_xml_node_t*) smol_xml_nodeptr_vector_t;
 
 typedef int (*smol_xml_matcher_cb)(const char*);
 
-typedef struct _smol_xml_t {
-	smol_xml_node_vector_t nodes;
-	smol_xml_attr_vector_t header_attributes;
-} smol_xml_t;
+typedef struct _smol_xml_t smol_xml_t;
 
 typedef struct _smol_xml_matcher_t {
 	char* has_tag; // NULL = any
@@ -284,10 +271,7 @@ smol_xml_attr_t* smol_xml_get_header_attr(smol_xml_t* xml, const char* attr_name
 
 typedef int (*read_test_cb_t)(char);
 
-typedef struct _smol_scanner_t {
-	char* buf;
-	size_t ptr, len;
-} smol_scanner_t;
+typedef struct _smol_scanner_t smol_scanner_t;
 
 void smol_scanner_init(smol_scanner_t* scanner, const char* data);
 void smol_scanner_skip(smol_scanner_t* scanner);
@@ -297,6 +281,28 @@ char* smol_scanner_read(smol_scanner_t* scanner, read_test_cb_t test);
 void smol_scanner_skip_spaces(smol_scanner_t* scanner);
 
 #ifdef SMOL_XML_IMPLEMENTATION
+
+typedef struct _smol_xml_node_t {
+	size_t id;
+
+	char* tag;
+
+	smol_xml_attr_vector_t attributes;
+	char* body;
+
+	size_t parent;
+	smol_id_vector_t children;
+} smol_xml_node_t;
+
+typedef struct _smol_xml_t {
+	smol_xml_node_vector_t nodes;
+	smol_xml_attr_vector_t header_attributes;
+} smol_xml_t;
+
+typedef struct _smol_scanner_t {
+	char* buf;
+	size_t ptr, len;
+} smol_scanner_t;
 
 #define _SMOL_TEST_CB(name, cond) int _smol_test__##name(char c) { return cond; }
 
