@@ -26,6 +26,7 @@ distribution.
 
 #include <string.h>
 #include <stdarg.h>
+#include <math.h>
 
 #ifdef _MSC_VER
 #	ifndef SMOL_INLINE
@@ -258,6 +259,11 @@ smol_pixel_t smol_image_getpixel(smol_image_t* img, smol_u32 x, smol_u32 y);
 //Returns: smol_canvas_t a structure of the newly created canvas
 smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height);
 
+//smol_canvas_create - Destroys the canvas
+//Arguments:
+// - smol_canvas_t* canvas -- The canvas to be destroyed
+void smol_canvas_destroy(smol_canvas_t* canvas);
+
 //smol_canvas_set_color - Sets current draw color the color of the canvas
 // Arguments:
 // - smol_canvas_t* canvas -- Pointer to the canvas
@@ -380,6 +386,15 @@ void smol_canvas_draw_pixel(smol_canvas_t* canvas, int x, int y);
 // - int x1                -- Line ending point on X-Axis
 // - int y1                -- Line ending point on Y-Axis
 void smol_canvas_draw_line(smol_canvas_t* canvas, int x0, int y0, int x1, int y1);
+
+//smol_canvas_draw_arrow - Draws a line into the canvas
+// Arguments:
+// - smol_canvas_t* canvas -- A pointer to the canvas
+// - int x0                -- Line starting point on X-Axis
+// - int y0                -- Line starting point on Y-Axis
+// - int x1                -- Line ending point on X-Axis
+// - int y1                -- Line ending point on Y-Axis
+void smol_canvas_draw_arrow(smol_canvas_t* canvas, int x0, int y0, int x1, int y1, int tip_size);
 
 //smol_canvas_draw_image - Draws image into the canvas 
 // Arguments:
@@ -691,10 +706,17 @@ smol_stack_t smol_stack_create(smol_u32 element_size, smol_u32 element_count) {
 	stack.total_allocation = element_size * element_count;
 	stack.element_size = element_size;
 	stack.element_count = 0;
-	stack.data = malloc(stack.total_allocation);
+	stack.data = SMOL_ALLOC(stack.total_allocation);
 	
 	return stack;
 
+}
+
+void smol_stack_free(smol_stack_t* stack) {
+	if(stack->data) SMOL_FREE(stack->data);
+	stack->total_allocation = 0;
+	stack->element_size = 0;
+	stack->element_count = 0;
 }
 
 #define smol_stack_new(type, element_count) smol_stack_create(sizeof(type), element_count)
@@ -813,6 +835,15 @@ smol_canvas_t smol_canvas_create(smol_u32 width, smol_u32 height) {
 	return canvas;
 }
 
+void smol_canvas_destroy(smol_canvas_t* canvas) {
+	smol_image_destroy(&canvas->draw_surface);
+	smol_stack_free(&canvas->color_stack);
+	smol_stack_free(&canvas->transform_stack);
+	smol_stack_free(&canvas->blend_funcs);
+	smol_stack_free(&canvas->font_stack);
+	smol_stack_free(&canvas->scissor_stack);
+}
+
 smol_font_t* smol_load_default_font() {
 
 	if(smol__builtin_font_refs)
@@ -861,7 +892,7 @@ smol_font_t* smol_load_default_font() {
 			smol__builtin_geom_data[data_offset + i*2] = bitstream[i * 2];
 			smol__builtin_geom_data[data_offset + i*2+1] = bitstream[i * 2 + 1];
 		}
-		smol__default_font.geometry = smol__builtin_geom_data;
+		smol__default_font.geometry = (smol_font_hor_geometry_t*)smol__builtin_geom_data;
 		
 	}
 
@@ -1031,6 +1062,32 @@ void smol_canvas_draw_pixel(smol_canvas_t* canvas, int x, int y) {
 
 }
 
+SMOL_INLINE void smol_clip_line(int* x0, int* y0, int* x1, int* y1, int edge, int axis, int side) {
+
+	switch(side) {
+		case 0: if(x0[0] < edge && x0[0] < x1[0]) break; else return; 
+		case 1: if(x0[0] > edge && x0[0] > x1[0]) break; else return;
+		default: return;
+	}
+	
+
+	switch(axis) {
+		case 0: {
+			if((x1[0] - x0[0]) == 0) 
+				return;
+			y0[0] = y0[0] + ((y1[0] - y0[0]) * (edge - x0[0])) / (x1[0] - x0[0]);
+			x0[0] = edge;
+		} break;
+		case 1: {
+			if((y1[0] - y0[0]) == 0) 
+				return;
+			x0[0] = x0[0] + ((x1[0] - x0[0]) * (edge - y0[0])) / (y1[0] - y0[0]);
+			y0[0] = edge;
+		} break;
+	}
+
+}
+
 void smol_canvas_draw_line(smol_canvas_t* canvas, int x0, int y0, int x1, int y1) {
 
 	smol_rect_t rect = smol_stack_back(canvas->scissor_stack, smol_rect_t);
@@ -1080,6 +1137,20 @@ void smol_canvas_draw_line(smol_canvas_t* canvas, int x0, int y0, int x1, int y1
 	CLIP_LINE_X(x1, y1, x0, y0, right-1, > );
 	CLIP_LINE_Y(x1, y1, x0, y0, bottom-1, > );
 
+	//smol_clip_line(&x0, &y0, &x1, &y1, left, 0, 0);
+	//smol_clip_line(&x0, &y0, &x1, &y1, top, 0, 1);
+
+	//smol_clip_line(&x1, &y1, &x0, &y0, left, 0, 0);
+	//smol_clip_line(&x1, &y1, &x0, &y0, top, 0, 1);
+
+	//smol_clip_line(&x0, &y0, &x1, &y1, right-1, 1, 0);
+	//smol_clip_line(&x0, &y0, &x1, &y1, bottom-1, 1, 1);
+
+	//smol_clip_line(&x1, &y1, &x0, &y0, right-1, 1, 0);
+	//smol_clip_line(&x1, &y1, &x0, &y0, bottom-1, 1, 1);
+
+
+
 	if(x0 == x1 && y0 == y1)
 		return;
 
@@ -1124,6 +1195,24 @@ void smol_canvas_draw_line(smol_canvas_t* canvas, int x0, int y0, int x1, int y1
 		}
 	}
 
+}
+
+void smol_canvas_draw_arrow(smol_canvas_t* canvas, int x0, int y0, int x1, int y1, int tip_width, int tip_height) {
+
+
+
+	smol_canvas_draw_line(canvas, x0, y0, x1, y1);
+
+	float nx = x1 - x0;
+	float ny = y1 - y0;
+	if(fabsf(nx + ny) >= 1.f) {
+		float nfac = 1.f / sqrtf(nx * nx + ny * ny);
+		nx *= nfac;
+		ny *= nfac;
+
+		smol_canvas_draw_line(canvas, x1 - nx * tip_width + ny * tip_height, y1 - ny * tip_width - nx * tip_height,  x1, y1);
+		smol_canvas_draw_line(canvas, x1 - nx * tip_width - ny * tip_height, y1 - ny * tip_width + nx * tip_height,  x1, y1);
+	}
 }
 
 void smol_canvas_draw_image(smol_canvas_t* canvas, smol_image_t* image, int x, int y) {
@@ -1351,8 +1440,8 @@ void smol_canvas_fill_rect(smol_canvas_t* canvas, int x, int y, int w, int h) {
 
 	int l = (x < left) ? left : x;
 	int t = (y < top) ? top : y;
-	int r = ((l + w) < right) ? x+w : l+((l + w) - right);
-	int b = ((t + h) < bottom) ? y+h : t+((t + h) - bottom);
+	int r = ((l + w) > right) ? l+((l + w) - right) : l+w;
+	int b = ((t + h) > bottom) ? t+((t + h) - bottom) : t+h;
 
 	for(int py = t; py < b; py++)
 	for(int px = l; px < r; px++)
@@ -1650,7 +1739,6 @@ void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame) {
 #endif 
 
 
-//https://qoiformat.org/qoi-specification.pdf
 smol_image_t smol_load_image_qoi(const char* file_path) {
 
 	void* buffer = NULL;
@@ -1688,11 +1776,6 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 	return res;
 }
 
-#if SMOL_DEBUG_QOI
-#ifndef SMOL_FRAME_IMPLEMENTATION
-#include "smol_frame.h"
-#endif 
-#endif 
 
 #define PEEK_BYTES(ptr, count) memcpy(ptr, (const void*)&data[index], count) 
 #define READ_BYTES(ptr, count) PEEK_BYTES(ptr, count), index+=count
@@ -1711,6 +1794,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 #define COLOR_HASH(color) (color.r * 3 + color.g * 5 + color.b * 7 + color.a*11)
 
 
+//https://qoiformat.org/qoi-specification.pdf
 smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length) {
 
 	smol_image_t res = { 0 };
@@ -1817,10 +1901,8 @@ smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t len
 	return res;
 
 }
+#undef COLOR_HASH
 #undef BSWAP32
-#undef HASH_STORE_PIXEL
-#undef STORE_PIXEL
-#undef HASH_RGBA
 
 #undef READ_BYTE
 #undef PEEK_BYTES
