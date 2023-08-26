@@ -1755,9 +1755,7 @@ void smol_canvas_present(smol_canvas_t* canvas, smol_frame_t* frame) {
 #define COLOR_HASH(color) (color.r * 3 + color.g * 5 + color.b * 7 + color.a*11)
 
 
-smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length) {
 
-	smol_image_t res = { 0 };
 
 	const smol_u8* data = (const char*)buffer;
 
