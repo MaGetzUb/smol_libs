@@ -1688,11 +1688,6 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 	return res;
 }
 
-#if SMOL_DEBUG_QOI
-#ifndef SMOL_FRAME_IMPLEMENTATION
-#include "smol_frame.h"
-#endif 
-#endif 
 
 #define PEEK_BYTES(ptr, count) memcpy(ptr, (const void*)&data[index], count) 
 #define READ_BYTES(ptr, count) PEEK_BYTES(ptr, count), index+=count
@@ -1817,10 +1812,8 @@ smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t len
 	return res;
 
 }
+#undef COLOR_HASH
 #undef BSWAP32
-#undef HASH_STORE_PIXEL
-#undef STORE_PIXEL
-#undef HASH_RGBA
 
 #undef READ_BYTE
 #undef PEEK_BYTES
