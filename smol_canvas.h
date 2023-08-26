@@ -1688,16 +1688,17 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 	return res;
 }
 
-smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length) {
+#if SMOL_DEBUG_QOI
+#ifndef SMOL_FRAME_IMPLEMENTATION
+#include "smol_frame.h"
+#endif 
+#endif 
 
-	smol_image_t res = { 0 };
-
-	const smol_u8* data = (const char*)buffer;
-#define PEEK_BYTES(ptr, count) memcpy(ptr, (const void*)data, count) 
-#define READ_BYTES(ptr, count) PEEK_BYTES(ptr, count), data += count
-#define GET_CHAR() ((data - (const smol_u8*)buffer) < length ? (*data++) : -1)
-#define SEEK_CUR(dir) (data += dir)
-
+#define PEEK_BYTES(ptr, count) memcpy(ptr, (const void*)&data[index], count) 
+#define READ_BYTES(ptr, count) PEEK_BYTES(ptr, count), index+=count
+#define PEEK_BYTE() data[index]
+#define READ_BYTE() data[index++]
+#define SEEK_CURRENT(dir) (data += dir)
 
 #define BSWAP32(value) ( \
 	((value & 0xFF000000) >> 0x18) | \
@@ -1707,11 +1708,26 @@ smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t len
 )
 
 
-	smol_u32 header;
-	smol_u32 width;
-	smol_u32 height;
-	smol_u8  num_channels;
-	smol_u8  color_space;
+#define COLOR_HASH(color) (color.r * 3 + color.g * 5 + color.b * 7 + color.a*11)
+
+
+smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length) {
+
+	smol_image_t res = { 0 };
+
+	const smol_u8* data = (const char*)buffer;
+
+	if(length <= (14 + 8)) {
+		fprintf(stderr, "QOI: Invalid file size. File can't fit image data!");
+		return res;
+	}
+
+	smol_u32 header = 0;
+	smol_u32 width = 0;
+	smol_u32 height = 0;
+	smol_u8  num_channels = 0;
+	smol_u8  color_space = 0;
+	smol_u32 index = 0;
 	
 	READ_BYTES(&header, 4);
 	
@@ -1723,142 +1739,93 @@ smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t len
 	READ_BYTES(&num_channels, 1);
 	READ_BYTES(&color_space, 1);
 
+	if(color_space > 1) {
+		fprintf(stderr, "QOI: Invalid color space!");
+		return res;
+	}
+
+	if(num_channels < 3 || num_channels > 4) {
+		fprintf(stderr, "QOI: Invalid channel count!");
+		return res;
+	}
+
 	width  = BSWAP32(width);
 	height = BSWAP32(height);
 
 	smol_pixel_t* pixel_data = (smol_pixel_t*)malloc(width * height * sizeof(smol_pixel_t));
-	for(smol_u32 i = 0; i < width * height; i++)
-		pixel_data[i].pixel = 0xAABBCCDD;
 
 	smol_u32 pixel_index = 0;
+	smol_pixel_t pixel_hashtable[64] = { 0 };
+	smol_pixel_t last_pixel = SMOLC_BLACK;
+	smol_pixel_t pixel = { 0, 0, 0, 255 };
 
-	{
+	smol_u32 run = 0;
 
-		smol_pixel_t pixel_hashtable[64] = { 0 };
-		smol_pixel_t last_pixel = SMOLC_BLACK;
-		#define HASH_RGBA(r, g, b, a) (r*3 + g*5 + b*7 + a*11) & 0x3F
-		#define STORE_PIXEL(hash, color) pixel_hashtable[hash] = color
-		#define HASH_STORE_PIXEL(color) STORE_PIXEL(HASH_RGBA(color.r, color.g, color.b, color.a), color)
+	//Got tired of the old loader, so fixed this part with the 
+	//actual reference code: https://github.com/phoboslab/qoi/blob/d61e911777accf2ee0d0d53451c2615772695f9a/qoi.h#L488
+	while(pixel_index < width*height) {
 
-		for(;;) {
-			smol_u8 tag = GET_CHAR();
-
-			switch(tag) {
-				case 0x00: {
-					smol_u8 bytes[7] = { 0 };
-					PEEK_BYTES(bytes, 7);
-					if(bytes[6] == 0x1)
-						goto end; //End of file
-				} break;
-				case 0xFE: { //RGB
-
-					smol_u8 rgb[3];
-					smol_u32 index;
-					READ_BYTES(rgb, 3);
-
-					index = HASH_RGBA(rgb[0], rgb[1], rgb[2], 255);
-					smol_pixel_t new_pixel = smol_rgba( rgb[0], rgb[1], rgb[2], 255 );
-				
-					SMOL_ASSERT(pixel_index < (width*height));
-					pixel_data[pixel_index++] = new_pixel;
-					last_pixel = new_pixel;
-					STORE_PIXEL(index, new_pixel);
-
-				} continue;
-				case 0xFF: { //RGBA
-					smol_u8 rgba[4];
-					smol_u32 index;
-					READ_BYTES(rgba, 4);
-
-					index = HASH_RGBA(rgba[0], rgba[1], rgba[2], rgba[3]);
-					smol_pixel_t new_pixel = smol_rgba( rgba[0], rgba[1], rgba[2], rgba[3] );
-
-					
-					SMOL_ASSERT(pixel_index < (width*height));
-					pixel_data[pixel_index++] = new_pixel;
-					last_pixel = new_pixel;
-					STORE_PIXEL(index, new_pixel);
-
-				} continue;
-			}
-			switch((tag >> 6) & 0x3) {
-				case 0: { //Index
-					smol_u8 array_index = tag & 0x3F;
-					smol_pixel_t new_pixel = pixel_hashtable[array_index];
-					
-					SMOL_ASSERT(pixel_index < (width*height));
-					pixel_data[pixel_index++] = new_pixel;
-					last_pixel = new_pixel;
-
-				} break;
-				case 1: {//Diff
-					//Seems to work
-					char dr = -2 + ((tag >> 4) & 3);
-					char dg = -2 + ((tag >> 2) & 3);
-					char db = -2 + ((tag >> 0) & 3);
-
-					smol_pixel_t new_pixel = last_pixel;
-					new_pixel.r += dr;
-					new_pixel.g += dg;
-					new_pixel.b += db;
-					new_pixel.a = last_pixel.a;
-
-					
-					SMOL_ASSERT(pixel_index < (width*height));
-					pixel_data[pixel_index++] = new_pixel;
-					last_pixel = new_pixel;
-					HASH_STORE_PIXEL(new_pixel);
-
-				} continue;
-				case 2: { //Luma
-					//Seems to work
-					smol_u8 next_byte = GET_CHAR();
-					
-					char dg = (tag & 0x3F) - 32;
-					char dr = dg + ((next_byte >> 4) & 0xF) - 8;
-					char db = dg + ((next_byte >> 0) & 0xF) - 8;
-
-					smol_pixel_t new_pixel = last_pixel;
-					new_pixel.r += dr;
-					new_pixel.g += dg;
-					new_pixel.b += db;
-					
-					SMOL_ASSERT(pixel_index < (width*height));
-					pixel_data[pixel_index++] = new_pixel;
-					last_pixel = new_pixel;
-					HASH_STORE_PIXEL(new_pixel);
-				} continue;
-				case 3: { //Run
-					//Seems to work now
-					smol_u8 run_len = tag & 0x3F;
-					
-					for(smol_u8 i = 0; i < run_len+1; i++) {
-						
-						SMOL_ASSERT(pixel_index < (width*height));
-						pixel_data[pixel_index++] = last_pixel;
-					}
-
-				} continue;
-			}
-
+		if(run > 0) {
+			run--;
 		}
-#undef HASH_STORE_PIXEL
-#undef STORE_PIXEL
-#undef HASH_RGBA
-	}
-	end:
+		else if((length - index) > 8) {
+			smol_u8 tag = READ_BYTE();
+			if(tag == 0xFE) { //RGB
+				pixel.r = READ_BYTE();
+				pixel.g = READ_BYTE();
+				pixel.b = READ_BYTE();
+			} 
+			else if(tag == 0xFF) { //RGBA
+				pixel.r = READ_BYTE();
+				pixel.g = READ_BYTE();
+				pixel.b = READ_BYTE();
+				pixel.a = READ_BYTE();
+			}
+			else {
+				switch((tag & 0xC0) >> 6) {
+					case 0: { //Index
+						pixel = pixel_hashtable[tag];
+					} break;
+					case 1: { //Diff
+						pixel.r += ((tag >> 4) & 0x3) - 2;
+						pixel.g += ((tag >> 2) & 0x3) - 2;
+						pixel.b += ((tag >> 0) & 0x3) - 2;
+					} break;
+					case 2: { //Luma
+						smol_u8 extra = READ_BYTE();
+						smol_i8 variance = (tag & 0x3F) - 32;
+						pixel.r += variance - 8 + ((extra >> 4) & 0xF);
+						pixel.g += variance;
+						pixel.b += variance - 8 + ((extra >> 0) & 0xF);
+					} break;
+					case 3: 
+						run = (tag & 0x3F);
+					break;
+				}
+			}
 	
+			pixel_hashtable[COLOR_HASH(pixel) & 0x3F] = pixel;
+		}
+
+		pixel_data[pixel_index++] = pixel;
+
+	}
+
 	res = smol_image_create_from_buffer(width, height, pixel_data);
 	res.free_func = free;
-#undef BSWAP32
-
-#undef GET_CHAR
-#undef PEEK_BYTES
-#undef READ_BYTES
 
 	return res;
 
 }
+#undef BSWAP32
+#undef HASH_STORE_PIXEL
+#undef STORE_PIXEL
+#undef HASH_RGBA
+
+#undef READ_BYTE
+#undef PEEK_BYTES
+#undef READ_BYTES
+#undef SEEK_CURRENT
 
 #endif 
 
