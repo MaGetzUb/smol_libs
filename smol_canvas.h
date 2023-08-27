@@ -1797,6 +1797,7 @@ smol_image_t smol_load_image_qoi(const char* file_path) {
 //https://qoiformat.org/qoi-specification.pdf
 smol_image_t smol_load_image_qoi_from_memory(const void* buffer, smol_size_t length) {
 
+	smol_image_t res = { 0 };
 
 	const smol_u8* data = (const char*)buffer;
 
