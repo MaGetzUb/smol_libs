@@ -203,7 +203,7 @@ int main() {
 	}
 
 
-	ID3D11InputLayout* d3d1_input_layout = NULL;
+	ID3D11InputLayout* d3d11_input_layout = NULL;
 	{
 		D3D11_INPUT_ELEMENT_DESC input_desc[] = {
 			{ .SemanticName = "POSITION", .SemanticIndex = 0, .Format = DXGI_FORMAT_R32G32B32_FLOAT, .InputSlot = 0, .AlignedByteOffset =  0, D3D11_INPUT_PER_VERTEX_DATA },
@@ -213,12 +213,12 @@ int main() {
 
 		void* bin = ID3D10Blob_GetBufferPointer(vs_bin);
 		UINT len = ID3D10Blob_GetBufferSize(vs_bin);
-		result = ID3D11Device_CreateInputLayout(d3d11_device, input_desc, 3, bin, len, &d3d1_input_layout);
+		result = ID3D11Device_CreateInputLayout(d3d11_device, input_desc, 3, bin, len, &d3d11_input_layout);
 		DXAssert(result);
 	}
 
 
-	ID3D11Buffer* d3d1__vertex_buffer = NULL;
+	ID3D11Buffer* d3d11_vertex_buffer = NULL;
 	{
 		vertex_t vdata[3] = {
 			{ {-.25f, -.25f,  .00f}, 0xFF0000FF, {0.f, 1.f} },
@@ -240,13 +240,13 @@ int main() {
 			.SysMemSlicePitch = sizeof(vdata[0])
 		};
 
-		result = ID3D11Device_CreateBuffer(d3d11_device, &buffer_desc, &data, &d3d1__vertex_buffer);
+		result = ID3D11Device_CreateBuffer(d3d11_device, &buffer_desc, &data, &d3d11_vertex_buffer);
 		DXAssert(result);
 	}
 
 	ID3D11SamplerState* d3d11_sampler_state = NULL;
 	ID3D11Texture2D* texture = NULL;
-	ID3D11ShaderResourceView* d3d1__texture_srv = NULL;
+	ID3D11ShaderResourceView* d3d11_texture_srv = NULL;
 
 	{
 		D3D11_SAMPLER_DESC sampler_desc = {
@@ -299,7 +299,7 @@ int main() {
 		srv_desc.Texture2D.MipLevels = 1;
 				
 
-		ID3D11Device_CreateShaderResourceView(d3d11_device, texture, &srv_desc, &d3d1__texture_srv);
+		ID3D11Device_CreateShaderResourceView(d3d11_device, texture, &srv_desc, &d3d11_texture_srv);
 	}
 
 
@@ -323,16 +323,16 @@ int main() {
 	ID3D11DeviceContext_PSSetSamplers(d3d11_device_context, 0, 1, samplers);
 
 	//Set the texture
-	ID3D11ShaderResourceView* srvs[] = { d3d1__texture_srv };
+	ID3D11ShaderResourceView* srvs[] = { d3d11_texture_srv };
 	ID3D11DeviceContext_PSSetShaderResources(d3d11_device_context, 0, 1, srvs);
 
 	//Set the topology
 	ID3D11DeviceContext_IASetPrimitiveTopology(d3d11_device_context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	//Set vertex layout
-	ID3D11DeviceContext_IASetInputLayout(d3d11_device_context, d3d1_input_layout);
+	ID3D11DeviceContext_IASetInputLayout(d3d11_device_context, d3d11_input_layout);
 
 	//Set the vertex buffer data
-	ID3D11Buffer* buffers[] = { d3d1__vertex_buffer };
+	ID3D11Buffer* buffers[] = { d3d11_vertex_buffer };
 	UINT strides[] = { sizeof(vertex_t) };
 	UINT offsets[] = { 0 };
 	ID3D11DeviceContext_IASetVertexBuffers(d3d11_device_context, 0, 1, buffers, strides, offsets);
@@ -345,8 +345,7 @@ int main() {
 	while(!smol_frame_is_closed(frame)) {
 
 		smol_frame_update(frame);
-		//Clear the rendertarget
-				
+
 		//Set rendertarget to back buffer:
 		ID3D11DeviceContext_OMSetRenderTargets(d3d11_device_context, 1, &d3d11_backbuffer_rendertarget, NULL);
 
@@ -364,11 +363,11 @@ int main() {
 	}
 	
 	SMOL_SAFE_COM_RELEASE(d3d11_sampler_state);
-	SMOL_SAFE_COM_RELEASE(d3d1__texture_srv);
+	SMOL_SAFE_COM_RELEASE(d3d11_texture_srv);
 	SMOL_SAFE_COM_RELEASE(d3d11_vs);
 	SMOL_SAFE_COM_RELEASE(d3d11_ps);
-	SMOL_SAFE_COM_RELEASE(d3d1__vertex_buffer);
-	SMOL_SAFE_COM_RELEASE(d3d1_input_layout);
+	SMOL_SAFE_COM_RELEASE(d3d11_vertex_buffer);
+	SMOL_SAFE_COM_RELEASE(d3d11_input_layout);
 
 	SMOL_SAFE_COM_RELEASE(d3d11_backbuffer_rendertarget);
 	SMOL_SAFE_COM_RELEASE(d3d11_device_context);
